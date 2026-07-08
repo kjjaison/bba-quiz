@@ -27,6 +27,9 @@ var CONFIG = {
   // Each daily quiz must have at least this many questions (chapters may have more)
   MIN_QUESTIONS_PER_QUIZ: 5,
 
+  // First date when rebuilding DailySchedule from the Questions sheet
+  SCHEDULE_START_DATE: '2026-07-08',
+
   // Password salt prefix (change this to a random string in production)
   SALT: 'bba-quiz-2026',
 
