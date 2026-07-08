@@ -11,6 +11,7 @@ var CONFIG = {
     SCHEDULE: 'DailySchedule',
     QUESTIONS: 'Questions',
     SUBMISSIONS: 'Submissions',
+    SESSIONS: 'Sessions',
     BADGES: 'Badges',
     SETTINGS: 'Settings'
   },
@@ -21,8 +22,17 @@ var CONFIG = {
   // OTP validity in minutes
   OTP_EXPIRY_MINUTES: 10,
 
-  // Session token validity in hours
-  SESSION_HOURS: 72,
+  // Session token validity in hours (30 days)
+  SESSION_HOURS: 720,
+
+  // Longer session when user chooses "Remember me on this device" (1 year)
+  SESSION_REMEMBER_HOURS: 8760,
+
+  // Extend session expiry on each authenticated API call
+  SESSION_EXTEND_ON_USE: true,
+
+  // Max active sessions per user (web + mobile can coexist)
+  MAX_SESSIONS_PER_USER: 10,
 
   // Each daily quiz must have at least this many questions (chapters may have more)
   MIN_QUESTIONS_PER_QUIZ: 5,

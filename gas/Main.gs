@@ -51,12 +51,17 @@ function handleApi_(e) {
     switch (action) {
       case 'register':
         return successResponse_({
-          user: registerUser_(params.email, params.password, params.displayName)
+          user: registerUser_(
+            params.email,
+            params.password,
+            params.displayName,
+            params.rememberMe
+          )
         });
 
       case 'login':
         return successResponse_({
-          user: loginWithPassword_(params.email, params.password)
+          user: loginWithPassword_(params.email, params.password, params.rememberMe)
         });
 
       case 'requestOtp':
@@ -64,7 +69,7 @@ function handleApi_(e) {
 
       case 'loginOtp':
         return successResponse_({
-          user: loginWithOTP_(params.email, params.otp)
+          user: loginWithOTP_(params.email, params.otp, params.rememberMe)
         });
 
       case 'quiz':

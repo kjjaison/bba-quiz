@@ -115,6 +115,23 @@
       box-shadow: 0 0 0 3px rgba(43, 108, 176, 0.15);
     }
 
+    .remember-row {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      cursor: pointer;
+      user-select: none;
+    }
+
+    .remember-row input {
+      width: auto;
+      margin: 0;
+      cursor: pointer;
+    }
+
     .btn {
       display: inline-flex;
       align-items: center;
@@ -405,6 +422,10 @@
               <label for="login-password">Password</label>
               <input type="password" id="login-password" placeholder="Your password" required>
             </div>
+            <label class="remember-row">
+              <input type="checkbox" id="remember-login" checked>
+              Remember me on this device
+            </label>
             <button class="btn btn-primary" id="btn-login">Sign In</button>
           </div>
 
@@ -419,6 +440,10 @@
                 <label for="otp-code">Enter 6-digit code</label>
                 <input type="text" id="otp-code" placeholder="000000" maxlength="6" pattern="[0-9]{6}">
               </div>
+              <label class="remember-row">
+                <input type="checkbox" id="remember-otp" checked>
+                Remember me on this device
+              </label>
               <button class="btn btn-primary" id="btn-login-otp">Verify & Sign In</button>
             </div>
           </div>
@@ -438,6 +463,10 @@
             <label for="reg-password">Password</label>
             <input type="password" id="reg-password" placeholder="At least 6 characters" required>
           </div>
+          <label class="remember-row">
+            <input type="checkbox" id="remember-register" checked>
+            Remember me on this device
+          </label>
           <button class="btn btn-primary" id="btn-register">Create Account</button>
         </div>
       </div>
@@ -499,9 +528,37 @@
   <script>
     const TOKEN_KEY = 'bba_quiz_token';
     const USER_KEY = 'bba_quiz_user';
+    const REMEMBER_PREF_KEY = 'bba_quiz_remember';
+    const SESSION_TOKEN_KEY = 'bba_quiz_session_token';
+    const SESSION_USER_KEY = 'bba_quiz_session_user';
 
-    let currentToken = localStorage.getItem(TOKEN_KEY);
-    let currentUser = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+    function isRememberPrefEnabled() {
+      return localStorage.getItem(REMEMBER_PREF_KEY) !== 'false';
+    }
+
+    function loadStoredSession() {
+      const persistentToken = localStorage.getItem(TOKEN_KEY);
+      if (persistentToken) {
+        return {
+          token: persistentToken,
+          user: JSON.parse(localStorage.getItem(USER_KEY) || 'null')
+        };
+      }
+
+      const sessionToken = sessionStorage.getItem(SESSION_TOKEN_KEY);
+      if (sessionToken) {
+        return {
+          token: sessionToken,
+          user: JSON.parse(sessionStorage.getItem(SESSION_USER_KEY) || 'null')
+        };
+      }
+
+      return { token: null, user: null };
+    }
+
+    const storedSession = loadStoredSession();
+    let currentToken = storedSession.token;
+    let currentUser = storedSession.user;
     let currentQuiz = null;
     let selectedAnswers = {};
 
@@ -521,10 +578,10 @@
               profile: 'apiProfile'
             };
             const fn = fnMap[action];
-            const args = action === 'register' ? [params.email, params.password, params.displayName]
-              : action === 'login' ? [params.email, params.password]
+            const args = action === 'register' ? [params.email, params.password, params.displayName, params.rememberMe]
+              : action === 'login' ? [params.email, params.password, params.rememberMe]
               : action === 'requestOtp' ? [params.email]
-              : action === 'loginOtp' ? [params.email, params.otp]
+              : action === 'loginOtp' ? [params.email, params.otp, params.rememberMe]
               : action === 'quiz' ? [params.token]
               : action === 'submit' ? [params.token, params.answers]
               : action === 'leaderboard' ? [params.token, params.period]
@@ -565,11 +622,25 @@
       btn.textContent = loading ? 'Please wait...' : btn.dataset.originalText;
     }
 
-    function saveSession(user) {
+    function saveSession(user, rememberMe) {
+      const remember = rememberMe !== false;
+      localStorage.setItem(REMEMBER_PREF_KEY, remember ? 'true' : 'false');
+
       currentToken = user.token;
       currentUser = { email: user.email, displayName: user.displayName };
-      localStorage.setItem(TOKEN_KEY, currentToken);
-      localStorage.setItem(USER_KEY, JSON.stringify(currentUser));
+
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+      sessionStorage.removeItem(SESSION_TOKEN_KEY);
+      sessionStorage.removeItem(SESSION_USER_KEY);
+
+      if (remember) {
+        localStorage.setItem(TOKEN_KEY, currentToken);
+        localStorage.setItem(USER_KEY, JSON.stringify(currentUser));
+      } else {
+        sessionStorage.setItem(SESSION_TOKEN_KEY, currentToken);
+        sessionStorage.setItem(SESSION_USER_KEY, JSON.stringify(currentUser));
+      }
     }
 
     function clearSession() {
@@ -577,6 +648,16 @@
       currentUser = null;
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
+      sessionStorage.removeItem(SESSION_TOKEN_KEY);
+      sessionStorage.removeItem(SESSION_USER_KEY);
+    }
+
+    function syncRememberCheckboxes() {
+      const checked = isRememberPrefEnabled();
+      ['remember-login', 'remember-otp', 'remember-register'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.checked = checked;
+      });
     }
 
     function showApp() {
@@ -589,6 +670,7 @@
     function showAuth() {
       document.getElementById('auth-screen').classList.remove('hidden');
       document.getElementById('app-screen').classList.add('hidden');
+      syncRememberCheckboxes();
     }
 
     // Tab switching
@@ -636,9 +718,10 @@
       try {
         const res = await API.call('login', {
           email: document.getElementById('login-email').value,
-          password: document.getElementById('login-password').value
+          password: document.getElementById('login-password').value,
+          rememberMe: document.getElementById('remember-login').checked
         });
-        saveSession(res.user);
+        saveSession(res.user, document.getElementById('remember-login').checked);
         showApp();
       } catch (err) {
         showAlert('alert-auth', err.message || 'Login failed', 'error');
@@ -653,9 +736,10 @@
         const res = await API.call('register', {
           email: document.getElementById('reg-email').value,
           password: document.getElementById('reg-password').value,
-          displayName: document.getElementById('reg-name').value
+          displayName: document.getElementById('reg-name').value,
+          rememberMe: document.getElementById('remember-register').checked
         });
-        saveSession(res.user);
+        saveSession(res.user, document.getElementById('remember-register').checked);
         showApp();
       } catch (err) {
         showAlert('alert-auth', err.message || 'Registration failed', 'error');
@@ -682,9 +766,10 @@
       try {
         const res = await API.call('loginOtp', {
           email: document.getElementById('otp-email').value,
-          otp: document.getElementById('otp-code').value
+          otp: document.getElementById('otp-code').value,
+          rememberMe: document.getElementById('remember-otp').checked
         });
-        saveSession(res.user);
+        saveSession(res.user, document.getElementById('remember-otp').checked);
         showApp();
       } catch (err) {
         showAlert('alert-auth', err.message || 'Invalid code', 'error');
@@ -886,6 +971,7 @@
     }
 
     // Init
+    syncRememberCheckboxes();
     if (currentToken && currentUser) {
       showApp();
     } else {

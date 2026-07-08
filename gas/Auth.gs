@@ -1,6 +1,14 @@
 /**
  * Authentication: email+password and email+OTP
+ * Supports multiple concurrent sessions per user (web + mobile).
  */
+
+var SESSION_COL = {
+  EMAIL: 0,
+  TOKEN: 1,
+  EXPIRES: 2,
+  CREATED: 3
+};
 
 function hashPassword_(password) {
   var raw = CONFIG.SALT + password;
@@ -14,7 +22,114 @@ function generateToken_() {
   return Utilities.getUuid() + '-' + Utilities.getUuid();
 }
 
-function registerUser_(email, password, displayName) {
+var SESSION_COL = {
+  EMAIL: 0,
+  TOKEN: 1,
+  EXPIRES: 2,
+  CREATED: 3,
+  REMEMBER: 4
+};
+
+function parseRememberMe_(value) {
+  return value === true || value === 'true' || value === 1 || value === '1';
+}
+
+function sessionExpiresAt_(fromDate, rememberMe) {
+  var base = fromDate || new Date();
+  var hours = parseRememberMe_(rememberMe)
+    ? CONFIG.SESSION_REMEMBER_HOURS
+    : CONFIG.SESSION_HOURS;
+  return new Date(base.getTime() + hours * 60 * 60 * 1000);
+}
+
+function getSessionsSheet_() {
+  var ss = getSpreadsheet_();
+  var sheet = ss.getSheetByName(CONFIG.SHEETS.SESSIONS);
+  if (!sheet) {
+    sheet = ss.insertSheet(CONFIG.SHEETS.SESSIONS);
+    sheet.appendRow(['email', 'session_token', 'expires_at', 'created_at', 'remember_me']);
+    sheet.getRange(1, 1, 1, 5).setFontWeight('bold');
+    sheet.setFrozenRows(1);
+  }
+  return sheet;
+}
+
+function createSession_(email, rememberMe) {
+  email = (email || '').toLowerCase().trim();
+  var remember = parseRememberMe_(rememberMe);
+  var token = generateToken_();
+  var now = new Date();
+  var expires = sessionExpiresAt_(now, remember);
+  var sheet = getSessionsSheet_();
+
+  sheet.appendRow([email, token, expires, now, remember]);
+  pruneSessionsForUser_(email);
+
+  return token;
+}
+
+function pruneSessionsForUser_(email) {
+  var sheet = getSessionsSheet_();
+  var data = sheet.getDataRange().getValues();
+  var now = new Date();
+  var rowsToDelete = [];
+  var active = [];
+
+  for (var i = 1; i < data.length; i++) {
+    var rowEmail = (data[i][SESSION_COL.EMAIL] || '').toLowerCase();
+    if (rowEmail !== email) continue;
+
+    var expires = new Date(data[i][SESSION_COL.EXPIRES]);
+    if (expires < now) {
+      rowsToDelete.push(i + 1);
+      continue;
+    }
+
+    active.push({
+      row: i + 1,
+      created: data[i][SESSION_COL.CREATED] instanceof Date
+        ? data[i][SESSION_COL.CREATED].getTime()
+        : new Date(data[i][SESSION_COL.CREATED] || 0).getTime()
+    });
+  }
+
+  rowsToDelete.sort(function(a, b) { return b - a; });
+  for (var d = 0; d < rowsToDelete.length; d++) {
+    sheet.deleteRow(rowsToDelete[d]);
+  }
+
+  var maxSessions = CONFIG.MAX_SESSIONS_PER_USER || 10;
+  if (active.length <= maxSessions) return;
+
+  active.sort(function(a, b) { return a.created - b.created; });
+  var excess = active.length - maxSessions;
+  for (var j = 0; j < excess; j++) {
+    sheet.deleteRow(active[j].row);
+  }
+}
+
+function getUserProfileByEmail_(email) {
+  var sheet = getSheet_(CONFIG.SHEETS.USERS);
+  var data = sheet.getDataRange().getValues();
+
+  for (var i = 1; i < data.length; i++) {
+    if ((data[i][0] || '').toLowerCase() === email) {
+      return {
+        row: i + 1,
+        email: data[i][0],
+        displayName: data[i][2],
+        totalScore: Number(data[i][6]) || 0,
+        totalQuizzes: Number(data[i][7]) || 0,
+        perfectScores: Number(data[i][8]) || 0,
+        streak: Number(data[i][9]) || 0
+      };
+    }
+  }
+
+  throw new Error('User not found');
+}
+
+function registerUser_(email, password, displayName, rememberMe) {
   email = (email || '').toLowerCase().trim();
   displayName = (displayName || '').trim();
 
@@ -37,27 +152,26 @@ function registerUser_(email, password, displayName) {
     }
   }
 
-  var token = generateToken_();
   var now = new Date();
-  var expires = new Date(now.getTime() + CONFIG.SESSION_HOURS * 60 * 60 * 1000);
+  var token = createSession_(email, rememberMe);
 
   sheet.appendRow([
     email,
     hashPassword_(password),
     displayName,
     now,
-    token,
-    expires,
-    0,  // total_score
-    0,  // total_quizzes
-    0,  // perfect_scores
-    0   // current_streak
+    '',  // legacy session_token (unused — see Sessions sheet)
+    '',  // legacy session_expires
+    0,
+    0,
+    0,
+    0
   ]);
 
   return { email: email, displayName: displayName, token: token };
 }
 
-function loginWithPassword_(email, password) {
+function loginWithPassword_(email, password, rememberMe) {
   email = (email || '').toLowerCase().trim();
   if (!email || !password) {
     throw new Error('Email and password are required');
@@ -72,9 +186,7 @@ function loginWithPassword_(email, password) {
       if (data[i][1] !== hash) {
         throw new Error('Invalid email or password');
       }
-      var token = generateToken_();
-      var expires = new Date(Date.now() + CONFIG.SESSION_HOURS * 60 * 60 * 1000);
-      sheet.getRange(i + 1, 5, 1, 2).setValues([[token, expires]]);
+      var token = createSession_(email, rememberMe);
       return {
         email: data[i][0],
         displayName: data[i][2],
@@ -91,7 +203,6 @@ function requestOTP_(email) {
     throw new Error('Email is required');
   }
 
-  // User must exist to request OTP
   var usersSheet = getSheet_(CONFIG.SHEETS.USERS);
   var users = usersSheet.getDataRange().getValues();
   var userExists = false;
@@ -111,7 +222,6 @@ function requestOTP_(email) {
   var otpSheet = getSheet_(CONFIG.SHEETS.OTP);
   var otpData = otpSheet.getDataRange().getValues();
 
-  // Remove existing OTP for this email
   for (var j = otpData.length - 1; j >= 1; j--) {
     if ((otpData[j][0] || '').toLowerCase() === email) {
       otpSheet.deleteRow(j + 1);
@@ -135,7 +245,7 @@ function requestOTP_(email) {
   return { message: 'OTP sent to your email' };
 }
 
-function loginWithOTP_(email, otp) {
+function loginWithOTP_(email, otp, rememberMe) {
   email = (email || '').toLowerCase().trim();
   otp = (otp || '').trim();
 
@@ -166,9 +276,7 @@ function loginWithOTP_(email, otp) {
 
   for (var j = 1; j < users.length; j++) {
     if ((users[j][0] || '').toLowerCase() === email) {
-      var token = generateToken_();
-      var expires = new Date(Date.now() + CONFIG.SESSION_HOURS * 60 * 60 * 1000);
-      usersSheet.getRange(j + 1, 5, 1, 2).setValues([[token, expires]]);
+      var token = createSession_(email, rememberMe);
       return {
         email: users[j][0],
         displayName: users[j][2],
@@ -184,24 +292,57 @@ function validateSession_(token) {
     throw new Error('Authentication required');
   }
 
+  token = String(token).trim();
+  var sessionsSheet = getSessionsSheet_();
+  var data = sessionsSheet.getDataRange().getValues();
+
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][SESSION_COL.TOKEN]) === token) {
+      var expires = new Date(data[i][SESSION_COL.EXPIRES]);
+      if (expires < new Date()) {
+        sessionsSheet.deleteRow(i + 1);
+        throw new Error('Session expired. Please log in again.');
+      }
+
+      if (CONFIG.SESSION_EXTEND_ON_USE) {
+        var remember = parseRememberMe_(data[i][SESSION_COL.REMEMBER]);
+        sessionsSheet.getRange(i + 1, SESSION_COL.EXPIRES + 1)
+          .setValue(sessionExpiresAt_(new Date(), remember));
+      }
+
+      var email = (data[i][SESSION_COL.EMAIL] || '').toLowerCase();
+      return getUserProfileByEmail_(email);
+    }
+  }
+
+  return validateLegacySession_(token);
+}
+
+/** Backward compatibility for tokens stored on the Users sheet (single device). */
+function validateLegacySession_(token) {
   var sheet = getSheet_(CONFIG.SHEETS.USERS);
   var data = sheet.getDataRange().getValues();
 
   for (var i = 1; i < data.length; i++) {
-    if (data[i][4] === token) {
-      if (new Date(data[i][5]) < new Date()) {
+    if (String(data[i][4]) === token) {
+      if (!data[i][5] || new Date(data[i][5]) < new Date()) {
         throw new Error('Session expired. Please log in again.');
       }
-      return {
-        row: i + 1,
-        email: data[i][0],
-        displayName: data[i][2],
-        totalScore: Number(data[i][6]) || 0,
-        totalQuizzes: Number(data[i][7]) || 0,
-        perfectScores: Number(data[i][8]) || 0,
-        streak: Number(data[i][9]) || 0
-      };
+
+      var email = (data[i][0] || '').toLowerCase();
+      var sessionsSheet = getSessionsSheet_();
+      sessionsSheet.appendRow([
+        email,
+        token,
+        sessionExpiresAt_(new Date(), true),
+        new Date(),
+        true
+      ]);
+      pruneSessionsForUser_(email);
+
+      return getUserProfileByEmail_(email);
     }
   }
+
   throw new Error('Invalid session. Please log in again.');
 }

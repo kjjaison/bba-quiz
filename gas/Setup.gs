@@ -32,6 +32,10 @@ function setupSheets() {
     'submitted_at', 'locked'
   ]);
 
+  createSheetWithHeaders_(ss, CONFIG.SHEETS.SESSIONS, [
+    'email', 'session_token', 'expires_at', 'created_at', 'remember_me'
+  ]);
+
   createSheetWithHeaders_(ss, CONFIG.SHEETS.SETTINGS, [
     'key', 'value'
   ]);

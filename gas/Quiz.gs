@@ -10,12 +10,12 @@ var QCOL = {
   QUIZ_ID: 0,
   NUM: 1,
   TEXT: 2,
-  CHAPTER: 3,
-  OPTION_A: 4,
-  OPTION_B: 5,
-  OPTION_C: 6,
-  OPTION_D: 7,
-  CORRECT: 8
+  OPTION_A: 3,
+  OPTION_B: 4,
+  OPTION_C: 5,
+  OPTION_D: 6,
+  CORRECT: 7,
+  CHAPTER: 8
 };
 
 function normalizeCorrectAnswer_(value) {

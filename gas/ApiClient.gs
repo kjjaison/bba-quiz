@@ -1,20 +1,20 @@
 /**
  * Client-callable wrappers for google.script.run (when HTML is served from Apps Script)
  */
-function apiRegister(email, password, displayName) {
-  return { success: true, user: registerUser_(email, password, displayName) };
+function apiRegister(email, password, displayName, rememberMe) {
+  return { success: true, user: registerUser_(email, password, displayName, rememberMe) };
 }
 
-function apiLogin(email, password) {
-  return { success: true, user: loginWithPassword_(email, password) };
+function apiLogin(email, password, rememberMe) {
+  return { success: true, user: loginWithPassword_(email, password, rememberMe) };
 }
 
 function apiRequestOtp(email) {
   return { success: true, data: requestOTP_(email) };
 }
 
-function apiLoginOtp(email, otp) {
-  return { success: true, user: loginWithOTP_(email, otp) };
+function apiLoginOtp(email, otp, rememberMe) {
+  return { success: true, user: loginWithOTP_(email, otp, rememberMe) };
 }
 
 function apiGetQuiz(token) {
