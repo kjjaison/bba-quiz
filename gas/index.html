@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BBA Dublin Bible Quiz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #1a365d;
+      --primary-light: #2b6cb0;
+      --accent: #d69e2e;
+      --bg: #f7fafc;
+      --card: #ffffff;
+      --text: #2d3748;
+      --text-muted: #718096;
+      --border: #e2e8f0;
+      --success: #38a169;
+      --error: #e53e3e;
+      --radius: 12px;
+      --shadow: 0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -1px rgba(0,0,0,0.06);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    .header {
+      background: linear-gradient(135deg, var(--primary) 0%, var(--primary-light) 100%);
+      color: white;
+      padding: 1.5rem 1rem;
+      text-align: center;
+      box-shadow: var(--shadow);
+    }
+
+    .header h1 {
+      font-family: 'Merriweather', serif;
+      font-size: 1.5rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .header p { opacity: 0.85; font-size: 0.9rem; }
+
+    .container {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: 1.5rem 1rem 3rem;
+    }
+
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 1.5rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .tabs {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1.25rem;
+      border-bottom: 2px solid var(--border);
+      padding-bottom: 0;
+    }
+
+    .tab {
+      padding: 0.6rem 1rem;
+      border: none;
+      background: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -2px;
+      transition: all 0.2s;
+    }
+
+    .tab.active {
+      color: var(--primary-light);
+      border-bottom-color: var(--primary-light);
+    }
+
+    .tab:hover { color: var(--primary); }
+
+    .form-group { margin-bottom: 1rem; }
+
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 500;
+      margin-bottom: 0.35rem;
+      color: var(--text);
+    }
+
+    input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 1rem;
+      transition: border-color 0.2s;
+    }
+
+    input:focus {
+      outline: none;
+      border-color: var(--primary-light);
+      box-shadow: 0 0 0 3px rgba(43, 108, 176, 0.15);
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: 8px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+      width: 100%;
+    }
+
+    .btn-primary {
+      background: var(--primary-light);
+      color: white;
+    }
+
+    .btn-primary:hover { background: var(--primary); }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .btn-outline {
+      background: transparent;
+      color: var(--primary-light);
+      border: 2px solid var(--primary-light);
+    }
+
+    .btn-outline:hover { background: rgba(43, 108, 176, 0.08); }
+
+    .btn-sm {
+      padding: 0.4rem 0.8rem;
+      font-size: 0.85rem;
+      width: auto;
+    }
+
+    .alert {
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+    }
+
+    .alert-error { background: #fed7d7; color: #c53030; }
+    .alert-success { background: #c6f6d5; color: #276749; }
+    .alert-info { background: #bee3f8; color: #2c5282; }
+
+    .hidden { display: none !important; }
+
+    .quiz-header {
+      text-align: center;
+      margin-bottom: 1.5rem;
+    }
+
+    .quiz-header .chapter {
+      font-family: 'Merriweather', serif;
+      font-size: 1.4rem;
+      color: var(--primary);
+      margin-bottom: 0.25rem;
+    }
+
+    .quiz-header .date {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+    }
+
+    .quiz-header .question-count {
+      display: inline-block;
+      margin-top: 0.5rem;
+      padding: 0.25rem 0.75rem;
+      background: #ebf8ff;
+      color: var(--primary-light);
+      border-radius: 999px;
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+
+    .question-card {
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+
+    .question-num {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--primary-light);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+
+    .question-text {
+      font-weight: 500;
+      margin-bottom: 1rem;
+      font-size: 1.05rem;
+    }
+
+    .options { display: flex; flex-direction: column; gap: 0.5rem; }
+
+    .option {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      border: 2px solid var(--border);
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.15s;
+    }
+
+    .option:hover { border-color: var(--primary-light); background: #ebf8ff; }
+    .option.selected { border-color: var(--primary-light); background: #ebf8ff; }
+    .option.correct { border-color: var(--success); background: #f0fff4; }
+    .option.incorrect { border-color: var(--error); background: #fff5f5; }
+    .option.locked { pointer-events: none; opacity: 0.85; }
+
+    .option input { width: auto; accent-color: var(--primary-light); }
+
+    .option-label {
+      font-weight: 600;
+      color: var(--primary-light);
+      min-width: 1.5rem;
+    }
+
+    .score-result {
+      text-align: center;
+      padding: 2rem 1rem;
+    }
+
+    .score-circle {
+      width: 120px;
+      height: 120px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--primary-light), var(--primary));
+      color: white;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 1rem;
+    }
+
+    .score-circle .points { font-size: 2rem; font-weight: 700; }
+    .score-circle .label { font-size: 0.8rem; opacity: 0.9; }
+
+    .leaderboard-table { width: 100%; border-collapse: collapse; }
+
+    .leaderboard-table th,
+    .leaderboard-table td {
+      padding: 0.75rem 0.5rem;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .leaderboard-table th {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      font-weight: 600;
+    }
+
+    .rank-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 2rem;
+      height: 2rem;
+      border-radius: 50%;
+      font-weight: 700;
+      font-size: 0.85rem;
+    }
+
+    .rank-1 { background: #fef3c7; color: #d97706; }
+    .rank-2 { background: #e5e7eb; color: #6b7280; }
+    .rank-3 { background: #fed7aa; color: #c2410c; }
+    .rank-other { background: var(--bg); color: var(--text-muted); }
+
+    .badges-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 1rem;
+    }
+
+    .badge-card {
+      text-align: center;
+      padding: 1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+    }
+
+    .badge-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+    .badge-name { font-weight: 600; font-size: 0.85rem; }
+    .badge-desc { font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; }
+
+    .nav-bar {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 1.25rem;
+    }
+
+    .user-info { font-size: 0.9rem; color: var(--text-muted); }
+    .user-info strong { color: var(--text); }
+
+    .stats-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .stat-box {
+      text-align: center;
+      padding: 1rem 0.5rem;
+      background: var(--bg);
+      border-radius: 8px;
+    }
+
+    .stat-value { font-size: 1.5rem; font-weight: 700; color: var(--primary); }
+    .stat-label { font-size: 0.75rem; color: var(--text-muted); }
+
+    .loading {
+      text-align: center;
+      padding: 2rem;
+      color: var(--text-muted);
+    }
+
+    .spinner {
+      width: 2rem;
+      height: 2rem;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary-light);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 1rem;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .verse-footer {
+      text-align: center;
+      padding: 1.5rem;
+      color: var(--text-muted);
+      font-style: italic;
+      font-size: 0.85rem;
+    }
+
+    @media (max-width: 480px) {
+      .header h1 { font-size: 1.25rem; }
+      .stats-row { grid-template-columns: repeat(2, 1fr); }
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>BBA Dublin Bible Quiz</h1>
+    <p>Daily Scripture Challenge</p>
+  </header>
+
+  <div class="container">
+    <!-- Auth Screen -->
+    <div id="auth-screen">
+      <div class="card">
+        <div class="tabs" id="auth-tabs">
+          <button class="tab active" data-tab="login">Login</button>
+          <button class="tab" data-tab="register">Register</button>
+        </div>
+
+        <div id="alert-auth" class="alert hidden"></div>
+
+        <!-- Login -->
+        <div id="panel-login">
+          <div class="tabs" style="margin-bottom:1rem;">
+            <button class="tab active" data-login-mode="password">Password</button>
+            <button class="tab" data-login-mode="otp">Email OTP</button>
+          </div>
+
+          <div id="login-password-form">
+            <div class="form-group">
+              <label for="login-email">Email</label>
+              <input type="email" id="login-email" placeholder="your@email.com" required>
+            </div>
+            <div class="form-group">
+              <label for="login-password">Password</label>
+              <input type="password" id="login-password" placeholder="Your password" required>
+            </div>
+            <button class="btn btn-primary" id="btn-login">Sign In</button>
+          </div>
+
+          <div id="login-otp-form" class="hidden">
+            <div class="form-group">
+              <label for="otp-email">Email</label>
+              <input type="email" id="otp-email" placeholder="your@email.com" required>
+            </div>
+            <button class="btn btn-primary" id="btn-send-otp">Send Login Code</button>
+            <div id="otp-code-section" class="hidden" style="margin-top:1rem;">
+              <div class="form-group">
+                <label for="otp-code">Enter 6-digit code</label>
+                <input type="text" id="otp-code" placeholder="000000" maxlength="6" pattern="[0-9]{6}">
+              </div>
+              <button class="btn btn-primary" id="btn-login-otp">Verify & Sign In</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Register -->
+        <div id="panel-register" class="hidden">
+          <div class="form-group">
+            <label for="reg-name">Display Name</label>
+            <input type="text" id="reg-name" placeholder="Your name" required>
+          </div>
+          <div class="form-group">
+            <label for="reg-email">Email</label>
+            <input type="email" id="reg-email" placeholder="your@email.com" required>
+          </div>
+          <div class="form-group">
+            <label for="reg-password">Password</label>
+            <input type="password" id="reg-password" placeholder="At least 6 characters" required>
+          </div>
+          <button class="btn btn-primary" id="btn-register">Create Account</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app-screen" class="hidden">
+      <div class="nav-bar">
+        <div class="user-info">Welcome, <strong id="user-name"></strong></div>
+        <button class="btn btn-outline btn-sm" id="btn-logout">Logout</button>
+      </div>
+
+      <div class="tabs" id="app-tabs">
+        <button class="tab active" data-view="quiz">Today's Quiz</button>
+        <button class="tab" data-view="leaderboard">Scoreboard</button>
+        <button class="tab" data-view="profile">Profile</button>
+      </div>
+
+      <div id="alert-app" class="alert hidden"></div>
+
+      <!-- Quiz View -->
+      <div id="view-quiz">
+        <div id="quiz-loading" class="loading">
+          <div class="spinner"></div>
+          Loading today's quiz...
+        </div>
+        <div id="quiz-content" class="hidden"></div>
+      </div>
+
+      <!-- Leaderboard View -->
+      <div id="view-leaderboard" class="hidden">
+        <div class="card">
+          <div class="tabs" id="lb-tabs">
+            <button class="tab active" data-period="all">All Time</button>
+            <button class="tab" data-period="monthly">Monthly</button>
+            <button class="tab" data-period="weekly">Weekly</button>
+          </div>
+          <div id="leaderboard-content">
+            <div class="loading"><div class="spinner"></div>Loading...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile View -->
+      <div id="view-profile" class="hidden">
+        <div class="card">
+          <div class="stats-row" id="profile-stats"></div>
+          <h3 style="margin-bottom:1rem;">Your Badges</h3>
+          <div class="badges-grid" id="badges-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="verse-footer">
+    "Blessed are those who hear the word of God and keep it." — Luke 11:28
+  </footer>
+
+  <script>
+    const TOKEN_KEY = 'bba_quiz_token';
+    const USER_KEY = 'bba_quiz_user';
+
+    let currentToken = localStorage.getItem(TOKEN_KEY);
+    let currentUser = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+    let currentQuiz = null;
+    let selectedAnswers = {};
+
+    // API layer: uses google.script.run when served from Apps Script, else fetch
+    const API = {
+      call(action, params = {}) {
+        return new Promise((resolve, reject) => {
+          if (typeof google !== 'undefined' && google.script && google.script.run) {
+            const fnMap = {
+              register: 'apiRegister',
+              login: 'apiLogin',
+              requestOtp: 'apiRequestOtp',
+              loginOtp: 'apiLoginOtp',
+              quiz: 'apiGetQuiz',
+              submit: 'apiSubmitQuiz',
+              leaderboard: 'apiLeaderboard',
+              profile: 'apiProfile'
+            };
+            const fn = fnMap[action];
+            const args = action === 'register' ? [params.email, params.password, params.displayName]
+              : action === 'login' ? [params.email, params.password]
+              : action === 'requestOtp' ? [params.email]
+              : action === 'loginOtp' ? [params.email, params.otp]
+              : action === 'quiz' ? [params.token]
+              : action === 'submit' ? [params.token, params.answers]
+              : action === 'leaderboard' ? [params.token, params.period]
+              : action === 'profile' ? [params.token]
+              : [];
+
+            google.script.run
+              .withSuccessHandler(resolve)
+              .withFailureHandler(reject)
+              [fn](...args);
+          } else {
+            const url = window.BBA_API_URL || '';
+            fetch(url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ action, ...params })
+            })
+              .then(r => r.json())
+              .then(data => data.success ? resolve(data) : reject(new Error(data.error)))
+              .catch(reject);
+          }
+        });
+      }
+    };
+
+    function showAlert(id, message, type) {
+      const el = document.getElementById(id);
+      el.textContent = message;
+      el.className = 'alert alert-' + type;
+      el.classList.remove('hidden');
+      setTimeout(() => el.classList.add('hidden'), 5000);
+    }
+
+    function setLoading(btn, loading) {
+      if (!btn) return;
+      btn.disabled = loading;
+      btn.dataset.originalText = btn.dataset.originalText || btn.textContent;
+      btn.textContent = loading ? 'Please wait...' : btn.dataset.originalText;
+    }
+
+    function saveSession(user) {
+      currentToken = user.token;
+      currentUser = { email: user.email, displayName: user.displayName };
+      localStorage.setItem(TOKEN_KEY, currentToken);
+      localStorage.setItem(USER_KEY, JSON.stringify(currentUser));
+    }
+
+    function clearSession() {
+      currentToken = null;
+      currentUser = null;
+      localStorage.removeItem(TOKEN_KEY);
+      localStorage.removeItem(USER_KEY);
+    }
+
+    function showApp() {
+      document.getElementById('auth-screen').classList.add('hidden');
+      document.getElementById('app-screen').classList.remove('hidden');
+      document.getElementById('user-name').textContent = currentUser.displayName;
+      loadQuiz();
+    }
+
+    function showAuth() {
+      document.getElementById('auth-screen').classList.remove('hidden');
+      document.getElementById('app-screen').classList.add('hidden');
+    }
+
+    // Tab switching
+    document.getElementById('auth-tabs').addEventListener('click', e => {
+      if (!e.target.classList.contains('tab')) return;
+      document.querySelectorAll('#auth-tabs .tab').forEach(t => t.classList.remove('active'));
+      e.target.classList.add('active');
+      const tab = e.target.dataset.tab;
+      document.getElementById('panel-login').classList.toggle('hidden', tab !== 'login');
+      document.getElementById('panel-register').classList.toggle('hidden', tab !== 'register');
+    });
+
+    document.querySelector('#panel-login .tabs').addEventListener('click', e => {
+      if (!e.target.classList.contains('tab')) return;
+      e.target.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      e.target.classList.add('active');
+      const mode = e.target.dataset.loginMode;
+      document.getElementById('login-password-form').classList.toggle('hidden', mode !== 'password');
+      document.getElementById('login-otp-form').classList.toggle('hidden', mode !== 'otp');
+    });
+
+    document.getElementById('app-tabs').addEventListener('click', e => {
+      if (!e.target.classList.contains('tab')) return;
+      document.querySelectorAll('#app-tabs .tab').forEach(t => t.classList.remove('active'));
+      e.target.classList.add('active');
+      const view = e.target.dataset.view;
+      ['quiz', 'leaderboard', 'profile'].forEach(v => {
+        document.getElementById('view-' + v).classList.toggle('hidden', v !== view);
+      });
+      if (view === 'leaderboard') loadLeaderboard('all');
+      if (view === 'profile') loadProfile();
+    });
+
+    document.getElementById('lb-tabs').addEventListener('click', e => {
+      if (!e.target.classList.contains('tab')) return;
+      document.querySelectorAll('#lb-tabs .tab').forEach(t => t.classList.remove('active'));
+      e.target.classList.add('active');
+      loadLeaderboard(e.target.dataset.period);
+    });
+
+    // Auth actions
+    document.getElementById('btn-login').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-login');
+      setLoading(btn, true);
+      try {
+        const res = await API.call('login', {
+          email: document.getElementById('login-email').value,
+          password: document.getElementById('login-password').value
+        });
+        saveSession(res.user);
+        showApp();
+      } catch (err) {
+        showAlert('alert-auth', err.message || 'Login failed', 'error');
+      }
+      setLoading(btn, false);
+    });
+
+    document.getElementById('btn-register').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-register');
+      setLoading(btn, true);
+      try {
+        const res = await API.call('register', {
+          email: document.getElementById('reg-email').value,
+          password: document.getElementById('reg-password').value,
+          displayName: document.getElementById('reg-name').value
+        });
+        saveSession(res.user);
+        showApp();
+      } catch (err) {
+        showAlert('alert-auth', err.message || 'Registration failed', 'error');
+      }
+      setLoading(btn, false);
+    });
+
+    document.getElementById('btn-send-otp').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-send-otp');
+      setLoading(btn, true);
+      try {
+        await API.call('requestOtp', { email: document.getElementById('otp-email').value });
+        document.getElementById('otp-code-section').classList.remove('hidden');
+        showAlert('alert-auth', 'Login code sent to your email!', 'success');
+      } catch (err) {
+        showAlert('alert-auth', err.message || 'Failed to send code', 'error');
+      }
+      setLoading(btn, false);
+    });
+
+    document.getElementById('btn-login-otp').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-login-otp');
+      setLoading(btn, true);
+      try {
+        const res = await API.call('loginOtp', {
+          email: document.getElementById('otp-email').value,
+          otp: document.getElementById('otp-code').value
+        });
+        saveSession(res.user);
+        showApp();
+      } catch (err) {
+        showAlert('alert-auth', err.message || 'Invalid code', 'error');
+      }
+      setLoading(btn, false);
+    });
+
+    document.getElementById('btn-logout').addEventListener('click', () => {
+      clearSession();
+      showAuth();
+    });
+
+    // Quiz
+    async function loadQuiz() {
+      document.getElementById('quiz-loading').classList.remove('hidden');
+      document.getElementById('quiz-content').classList.add('hidden');
+      try {
+        const res = await API.call('quiz', { token: currentToken });
+        currentQuiz = res.quiz;
+        renderQuiz(currentQuiz);
+      } catch (err) {
+        if (err.message && err.message.includes('Session')) {
+          clearSession();
+          showAuth();
+          showAlert('alert-auth', 'Session expired. Please log in again.', 'error');
+        } else {
+          document.getElementById('quiz-content').innerHTML =
+            '<div class="card"><div class="alert alert-info">' + (err.message || 'Failed to load quiz') + '</div></div>';
+          document.getElementById('quiz-content').classList.remove('hidden');
+        }
+      }
+      document.getElementById('quiz-loading').classList.add('hidden');
+    }
+
+    function renderQuiz(quiz) {
+      const container = document.getElementById('quiz-content');
+      selectedAnswers = {};
+
+      if (!quiz.available) {
+        container.innerHTML = '<div class="card"><div class="alert alert-info">' + quiz.message + '</div></div>';
+        container.classList.remove('hidden');
+        return;
+      }
+
+      let html = '<div class="card">';
+      html += '<div class="quiz-header">';
+      html += '<div class="chapter">' + escapeHtml(quiz.title || quiz.book + ' ' + quiz.chapter) + '</div>';
+      html += '<div class="date">' + quiz.date + '</div>';
+      const qCount = quiz.questionCount || (quiz.questions || []).length;
+      if (qCount > 0) {
+        html += '<div class="question-count">' + qCount + ' questions today</div>';
+      }
+      html += '</div>';
+
+      if (quiz.submitted) {
+        html += '<div class="score-result">';
+        html += '<div class="score-circle"><div class="points">' + quiz.score + '</div><div class="label">points</div></div>';
+        html += '<p style="color:var(--text-muted);">Quiz completed — answers are locked</p>';
+        html += '</div>';
+
+        (quiz.questions || []).forEach((q, idx) => {
+          const userAns = (quiz.answers || {})[String(q.id)] || '';
+          html += renderQuestion(q, idx + 1, true, userAns);
+        });
+      } else {
+        (quiz.questions || []).forEach((q, idx) => {
+          html += renderQuestion(q, idx + 1, false);
+        });
+        html += '<button class="btn btn-primary" id="btn-submit-quiz" style="margin-top:1rem;">Submit Answers</button>';
+      }
+
+      html += '</div>';
+      container.innerHTML = html;
+      container.classList.remove('hidden');
+
+      if (!quiz.submitted) {
+        container.querySelectorAll('.option').forEach(opt => {
+          opt.addEventListener('click', () => {
+            const qId = opt.dataset.qid;
+            const letter = opt.dataset.letter;
+            selectedAnswers[qId] = letter;
+            opt.closest('.options').querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
+            opt.classList.add('selected');
+            opt.querySelector('input').checked = true;
+          });
+        });
+
+        document.getElementById('btn-submit-quiz').addEventListener('click', submitQuiz);
+      }
+    }
+
+    function renderQuestion(q, num, locked, userAnswer) {
+      let html = '<div class="question-card">';
+      html += '<div class="question-num">Question ' + num + '</div>';
+      html += '<div class="question-text">' + escapeHtml(q.question) + '</div>';
+      html += '<div class="options">';
+      ['A', 'B', 'C', 'D'].forEach(letter => {
+        const text = q.options[letter];
+        if (!text) return;
+        let cls = 'option' + (locked ? ' locked' : '');
+        if (locked) {
+          if (letter === q.correctAnswer) cls += ' correct';
+          else if (letter === userAnswer && userAnswer !== q.correctAnswer) cls += ' incorrect';
+        }
+        if (!locked && userAnswer === letter) cls += ' selected';
+        html += '<label class="' + cls + '" data-qid="' + q.id + '" data-letter="' + letter + '">';
+        html += '<input type="radio" name="q' + q.id + '" value="' + letter + '"' +
+          (userAnswer === letter ? ' checked' : '') + (locked ? ' disabled' : '') + '>';
+        html += '<span class="option-label">' + letter + '</span>';
+        html += '<span>' + escapeHtml(text) + '</span>';
+        html += '</label>';
+      });
+      html += '</div></div>';
+      return html;
+    }
+
+    async function submitQuiz() {
+      const questions = currentQuiz.questions || [];
+      const unanswered = questions.filter(q => !selectedAnswers[String(q.id)]);
+      if (unanswered.length > 0) {
+        showAlert('alert-app', 'Please answer all ' + questions.length + ' questions before submitting.', 'error');
+        return;
+      }
+
+      const btn = document.getElementById('btn-submit-quiz');
+      setLoading(btn, true);
+      try {
+        const res = await API.call('submit', { token: currentToken, answers: selectedAnswers });
+        showAlert('alert-app',
+          'Quiz submitted! You scored ' + res.result.score + ' points (' + res.result.percentage + '%)' +
+          (res.result.isPerfect ? ' — Perfect score! ⭐' : ''), 'success');
+        loadQuiz();
+      } catch (err) {
+        showAlert('alert-app', err.message || 'Submission failed', 'error');
+      }
+      setLoading(btn, false);
+    }
+
+    // Leaderboard
+    async function loadLeaderboard(period) {
+      const container = document.getElementById('leaderboard-content');
+      container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
+      try {
+        const res = await API.call('leaderboard', { token: currentToken, period });
+        const rows = res.leaderboard || [];
+        if (rows.length === 0) {
+          container.innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:1rem;">No scores yet. Be the first!</p>';
+          return;
+        }
+        let html = '<table class="leaderboard-table"><thead><tr><th>Rank</th><th>Name</th><th>Score</th><th>Quizzes</th></tr></thead><tbody>';
+        rows.forEach(row => {
+          const rankCls = row.rank <= 3 ? 'rank-' + row.rank : 'rank-other';
+          html += '<tr>';
+          html += '<td><span class="rank-badge ' + rankCls + '">' + row.rank + '</span></td>';
+          html += '<td>' + escapeHtml(row.displayName) + '</td>';
+          html += '<td><strong>' + row.score + '</strong></td>';
+          html += '<td>' + row.quizzes + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      } catch (err) {
+        container.innerHTML = '<div class="alert alert-error">' + (err.message || 'Failed to load') + '</div>';
+      }
+    }
+
+    // Profile
+    async function loadProfile() {
+      try {
+        const res = await API.call('profile', { token: currentToken });
+        const p = res.profile;
+        const stats = p.stats || {};
+
+        document.getElementById('profile-stats').innerHTML =
+          '<div class="stat-box"><div class="stat-value">' + stats.totalScore + '</div><div class="stat-label">Total Points</div></div>' +
+          '<div class="stat-box"><div class="stat-value">' + stats.streak + '</div><div class="stat-label">Day Streak</div></div>' +
+          '<div class="stat-box"><div class="stat-value">' + stats.totalQuizzes + '</div><div class="stat-label">Quizzes Done</div></div>';
+
+        const badges = p.badges || [];
+        if (badges.length === 0) {
+          document.getElementById('badges-grid').innerHTML =
+            '<p style="color:var(--text-muted);grid-column:1/-1;text-align:center;">Complete quizzes to earn badges!</p>';
+        } else {
+          document.getElementById('badges-grid').innerHTML = badges.map(b =>
+            '<div class="badge-card"><div class="badge-icon">' + b.icon + '</div>' +
+            '<div class="badge-name">' + escapeHtml(b.name) + '</div>' +
+            '<div class="badge-desc">' + escapeHtml(b.description) + '</div></div>'
+          ).join('');
+        }
+      } catch (err) {
+        showAlert('alert-app', err.message || 'Failed to load profile', 'error');
+      }
+    }
+
+    function escapeHtml(str) {
+      const div = document.createElement('div');
+      div.textContent = str || '';
+      return div.innerHTML;
+    }
+
+    // Init
+    if (currentToken && currentUser) {
+      showApp();
+    } else {
+      showAuth();
+    }
+  </script>
+</body>
+</html>
