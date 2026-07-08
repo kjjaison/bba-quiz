@@ -11,9 +11,17 @@ function doGet(e) {
     return handleApi_(e);
   }
 
-  // Default: serve the quiz web page
+  return serveIndexHtml_();
+}
+
+/** Serve index HTML without Apps Script template tags (avoids <? parsing bugs). */
+function serveIndexHtml_() {
   try {
-    return HtmlService.createHtmlOutputFromFile('index')
+    var html = HtmlService.createHtmlOutputFromFile('index')
+      .evaluate()
+      .getContent();
+    html = html.replace(/__APP_VERSION__/g, CONFIG.APP_VERSION);
+    return HtmlService.createHtmlOutput(html)
       .setTitle('BBA Dublin Bible Quiz')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
@@ -21,7 +29,7 @@ function doGet(e) {
     return HtmlService.createHtmlOutput(
       '<div style="font-family:sans-serif;max-width:520px;margin:40px auto;padding:24px;">' +
       '<h1>BBA Dublin Bible Quiz — setup needed</h1>' +
-      '<p>The <b>index</b> HTML file is missing in Apps Script.</p>' +
+      '<p><b>Error:</b> ' + (err.message || 'Could not load index HTML') + '</p>' +
       '<ol>' +
       '<li>In Apps Script: <b>+ → HTML</b></li>' +
       '<li>Name it exactly: <b>index</b> (not index.html)</li>' +
@@ -94,6 +102,12 @@ function handleApi_(e) {
         var profileUser = validateSession_(token);
         return successResponse_({
           profile: getUserProfile_(profileUser)
+        });
+
+      case 'ping':
+        return successResponse_({
+          version: CONFIG.APP_VERSION,
+          time: new Date().toISOString()
         });
 
       default:

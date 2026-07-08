@@ -223,6 +223,29 @@ function validateUpcomingQuizzes() {
   showMessage_('Quiz Validation\n\n' + message);
 }
 
+function showQuizEmbedUrl() {
+  var url;
+  try {
+    url = ScriptApp.getService().getUrl();
+  } catch (e) {
+    url = '';
+  }
+  if (!url) {
+    showMessage_(
+      'No web app deployment found.\n\n' +
+      'Deploy first: Deploy → Manage deployments → Web app → New version → Deploy'
+    );
+    return;
+  }
+  var embedUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + encodeURIComponent(CONFIG.APP_VERSION);
+  var pingUrl = url + (url.indexOf('?') >= 0 ? '&' : '?') + 'action=ping';
+  showMessage_(
+    'Google Sites — Embed by URL:\n' + embedUrl +
+    '\n\nIf embed fails in normal browser, use a Link button (opens in new tab) instead of Embed.' +
+    '\n\nHealth check (open in browser):\n' + pingUrl
+  );
+}
+
 function onOpen() {
   try {
     SpreadsheetApp.getUi()
@@ -230,6 +253,7 @@ function onOpen() {
       .addItem('Run initial setup', 'setupSheets')
       .addItem('Refresh schedule from Questions', 'refreshDailyScheduleFromQuestions')
       .addItem('Validate upcoming quizzes', 'validateUpcomingQuizzes')
+      .addItem('Show Google Sites embed URL', 'showQuizEmbedUrl')
       .addToUi();
   } catch (e) {
     Logger.log('onOpen menu skipped: ' + e.message);

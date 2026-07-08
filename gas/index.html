@@ -3,6 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
   <title>BBA Dublin Bible Quiz</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
@@ -181,6 +184,32 @@
     .alert-info { background: #bee3f8; color: #2c5282; }
 
     .hidden { display: none !important; }
+
+    .embed-help {
+      background: #ebf8ff;
+      border-bottom: 1px solid #bee3f8;
+      color: #2c5282;
+      font-size: 0.875rem;
+      padding: 0.5rem 1rem;
+      text-align: center;
+    }
+
+    .embed-help a {
+      color: #2b6cb0;
+      font-weight: 600;
+    }
+
+    .trouble-row {
+      color: var(--text-muted);
+      font-size: 0.8rem;
+      margin-bottom: 1rem;
+      text-align: center;
+    }
+
+    .trouble-row a {
+      color: var(--primary-light);
+      font-weight: 600;
+    }
 
     .quiz-header {
       text-align: center;
@@ -390,6 +419,11 @@
   </style>
 </head>
 <body>
+  <div id="embed-help" class="embed-help hidden">
+    Quiz not loading in this frame?
+    <a id="embed-open-link" href="#" target="_top" rel="noopener">Open quiz full screen</a>
+  </div>
+
   <header class="header">
     <h1>BBA Dublin Bible Quiz</h1>
     <p>Daily Scripture Challenge</p>
@@ -405,6 +439,10 @@
         </div>
 
         <div id="alert-auth" class="alert hidden"></div>
+        <p class="trouble-row">
+          Page blank or error?
+          <a href="#" id="btn-reset-cache">Reset app cache</a>
+        </p>
 
         <!-- Login -->
         <div id="panel-login">
@@ -526,6 +564,66 @@
   </footer>
 
   <script>
+    const APP_VERSION = '__APP_VERSION__';
+    const VERSION_KEY = 'bba_quiz_app_version';
+
+    (function enforceAppVersion() {
+      if (!APP_VERSION || APP_VERSION === '__APP_VERSION__') return;
+
+      let storedVersion = null;
+      try {
+        storedVersion = localStorage.getItem(VERSION_KEY);
+      } catch (e) { /* storage blocked in private mode or some iframes */ }
+
+      if (storedVersion === APP_VERSION) return;
+
+      try {
+        localStorage.removeItem('bba_quiz_token');
+        localStorage.removeItem('bba_quiz_user');
+        localStorage.removeItem('bba_quiz_remember');
+        sessionStorage.removeItem('bba_quiz_session_token');
+        sessionStorage.removeItem('bba_quiz_session_user');
+        localStorage.setItem(VERSION_KEY, APP_VERSION);
+      } catch (e) { /* continue without storage */ }
+      // Never auto-reload: reloads break Google Sites embeds and can serve cached error pages.
+    })();
+
+    function resetAppCache(reload) {
+      try {
+        localStorage.removeItem(VERSION_KEY);
+        localStorage.removeItem('bba_quiz_token');
+        localStorage.removeItem('bba_quiz_user');
+        localStorage.removeItem('bba_quiz_remember');
+        sessionStorage.removeItem('bba_quiz_session_token');
+        sessionStorage.removeItem('bba_quiz_session_user');
+      } catch (e) { /* ignore */ }
+      if (reload) {
+        const url = new URL(location.href);
+        url.searchParams.set('nocache', String(Date.now()));
+        url.searchParams.delete('_vreload');
+        if (window.self !== window.top) {
+          const link = document.createElement('a');
+          link.href = url.toString();
+          link.target = '_top';
+          link.rel = 'noopener';
+          document.body.appendChild(link);
+          link.click();
+          link.remove();
+        } else {
+          location.replace(url.toString());
+        }
+      }
+    }
+
+    (function showEmbeddedHelp() {
+      if (window.self === window.top) return;
+      const bar = document.getElementById('embed-help');
+      if (!bar) return;
+      bar.classList.remove('hidden');
+      const link = document.getElementById('embed-open-link');
+      if (link) link.href = location.href.split('#')[0];
+    })();
+
     const TOKEN_KEY = 'bba_quiz_token';
     const USER_KEY = 'bba_quiz_user';
     const REMEMBER_PREF_KEY = 'bba_quiz_remember';
@@ -537,20 +635,24 @@
     }
 
     function loadStoredSession() {
-      const persistentToken = localStorage.getItem(TOKEN_KEY);
-      if (persistentToken) {
-        return {
-          token: persistentToken,
-          user: JSON.parse(localStorage.getItem(USER_KEY) || 'null')
-        };
-      }
+      try {
+        const persistentToken = localStorage.getItem(TOKEN_KEY);
+        if (persistentToken) {
+          const user = JSON.parse(localStorage.getItem(USER_KEY) || 'null');
+          if (user && user.displayName) {
+            return { token: persistentToken, user: user };
+          }
+        }
 
-      const sessionToken = sessionStorage.getItem(SESSION_TOKEN_KEY);
-      if (sessionToken) {
-        return {
-          token: sessionToken,
-          user: JSON.parse(sessionStorage.getItem(SESSION_USER_KEY) || 'null')
-        };
+        const sessionToken = sessionStorage.getItem(SESSION_TOKEN_KEY);
+        if (sessionToken) {
+          const user = JSON.parse(sessionStorage.getItem(SESSION_USER_KEY) || 'null');
+          if (user && user.displayName) {
+            return { token: sessionToken, user: user };
+          }
+        }
+      } catch (e) {
+        /* corrupt storage — treat as logged out */
       }
 
       return { token: null, user: null };
@@ -782,6 +884,12 @@
       showAuth();
     });
 
+    document.getElementById('btn-reset-cache').addEventListener('click', e => {
+      e.preventDefault();
+      clearSession();
+      resetAppCache(true);
+    });
+
     // Quiz
     async function loadQuiz() {
       document.getElementById('quiz-loading').classList.remove('hidden');
@@ -971,12 +1079,21 @@
     }
 
     // Init
-    syncRememberCheckboxes();
-    if (currentToken && currentUser) {
-      showApp();
-    } else {
-      showAuth();
+    function initApp() {
+      try {
+        syncRememberCheckboxes();
+        if (currentToken && currentUser) {
+          showApp();
+        } else {
+          showAuth();
+        }
+      } catch (err) {
+        showAuth();
+        showAlert('alert-auth', err.message || 'Could not start app', 'error');
+      }
     }
+
+    initApp();
   </script>
 </body>
 </html>
