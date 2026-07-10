@@ -10,13 +10,34 @@ var QCOL = {
   QUIZ_ID: 0,
   NUM: 1,
   TEXT: 2,
-  OPTION_A: 3,
-  OPTION_B: 4,
-  OPTION_C: 5,
-  OPTION_D: 6,
-  CORRECT: 7,
-  CHAPTER: 8
+  CHAPTER: 3,
+  OPTION_A: 4,
+  OPTION_B: 5,
+  OPTION_C: 6,
+  OPTION_D: 7,
+  CORRECT: 8
 };
+
+function normalizeLanguage_(language) {
+  var lang = String(language || CONFIG.DEFAULT_LANGUAGE || 'en').toLowerCase();
+  if (CONFIG.LANGUAGES && CONFIG.LANGUAGES[lang]) {
+    return lang;
+  }
+  return CONFIG.DEFAULT_LANGUAGE || 'en';
+}
+
+function getQuestionsSheet_(language) {
+  var lang = normalizeLanguage_(language);
+  var sheetName = CONFIG.LANGUAGES[lang].sheet;
+  var sheet = getSpreadsheet_().getSheetByName(sheetName);
+  if (!sheet && lang !== 'en') {
+    return getQuestionsSheet_('en');
+  }
+  if (!sheet) {
+    throw new Error('Sheet not found: ' + sheetName + '. Run setupSheets() first.');
+  }
+  return sheet;
+}
 
 function normalizeCorrectAnswer_(value) {
   var s = String(value || '').trim().toLowerCase();
@@ -55,27 +76,39 @@ function chapterFromQuestions_(questions) {
   return '';
 }
 
-function buildQuizTitle_(book, chapterRef, scheduleChapter) {
-  var chapter = chapterRef || scheduleChapter || '';
-  if (book && chapter) return book + ' ' + chapter;
-  return chapter || book || '';
+/** Use question 1 book_reference as the canonical chapter label for a quiz. */
+function primaryBookReferenceFromQuestions_(questions) {
+  if (!questions || questions.length === 0) return '';
+  return String(questions[0].chapter || '').trim();
 }
 
-function countQuestionsForQuiz_(quizId) {
-  var sheet = getSheet_(CONFIG.SHEETS.QUESTIONS);
-  var data = sheet.getDataRange().getValues();
-  var count = 0;
+function buildQuizTitle_(book, scheduleChapter, bookReference) {
+  bookReference = String(bookReference || '').trim();
+  scheduleChapter = String(scheduleChapter || '').trim();
+  book = String(book || '').trim();
 
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][QCOL.QUIZ_ID]) === String(quizId) && String(data[i][QCOL.TEXT] || '').trim()) {
-      count++;
+  if (bookReference) {
+    var fromRef = parseBookReference_(bookReference);
+    if (fromRef.book && fromRef.chapter) {
+      return fromRef.book + ' ' + fromRef.chapter;
+    }
+    if (fromRef.chapter && !fromRef.book && book && /^(Chapter\s+\d+|\d+)$/i.test(fromRef.chapter)) {
+      return book + ' ' + fromRef.chapter;
     }
   }
-  return count;
+
+  if (book && scheduleChapter) {
+    return book + ' ' + scheduleChapter;
+  }
+  return bookReference || book || scheduleChapter || '';
 }
 
-function validateQuizReady_(quizId, book, chapter) {
-  var count = countQuestionsForQuiz_(quizId);
+function countQuestionsForQuiz_(quizId, language) {
+  return loadQuestionsForQuiz_(quizId, language, false).length;
+}
+
+function validateQuizReady_(quizId, book, chapter, language) {
+  var count = countQuestionsForQuiz_(quizId, language);
   var minRequired = CONFIG.MIN_QUESTIONS_PER_QUIZ;
 
   if (count < minRequired) {
@@ -90,10 +123,10 @@ function validateQuizReady_(quizId, book, chapter) {
   return count;
 }
 
-function getTodayQuiz_(user) {
+function getTodayQuiz_(user, language) {
+  var lang = normalizeLanguage_(language);
   var today = todayDate_();
-  var scheduleSheet = getSheet_(CONFIG.SHEETS.SCHEDULE);
-  var schedule = scheduleSheet.getDataRange().getValues();
+  var schedule = getSheetData_(CONFIG.SHEETS.SCHEDULE);
 
   var quizId = null;
   var chapter = '';
@@ -121,90 +154,109 @@ function getTodayQuiz_(user) {
     };
   }
 
-  var questionCount;
-  try {
-    questionCount = validateQuizReady_(quizId, book, chapter);
-  } catch (err) {
+  var submission = getSubmission_(user.email, today);
+  var includeAnswers = !!submission;
+  var questions = loadQuestionsForQuiz_(quizId, lang, includeAnswers);
+  var questionCount = questions.length;
+  var minRequired = CONFIG.MIN_QUESTIONS_PER_QUIZ;
+
+  if (questionCount < minRequired) {
+    var label = (book && chapter) ? book + ' ' + chapter : quizId;
     return {
       date: today,
       available: false,
       quizId: quizId,
       book: book,
       chapter: chapter,
-      message: err.message
+      language: lang,
+      message:
+        'Today\'s quiz (' + label + ') is not ready yet. ' +
+        'It needs at least ' + minRequired + ' questions but only has ' + questionCount + '. ' +
+        'Please ask an admin to add more questions in the sheet.'
     };
   }
 
-  var reviewQuestions = getQuestionsForReview_(quizId);
-  var chapterRef = chapterFromQuestions_(reviewQuestions) || chapter;
-  var title = buildQuizTitle_(book, chapterRef, chapter);
+  var bookReference = primaryBookReferenceFromQuestions_(questions);
+  var title = buildQuizTitle_(book, chapter, bookReference);
+  var displayChapter = title || chapter;
 
-  // Check if user already submitted today
-  var submission = getSubmission_(user.email, today);
   if (submission) {
     return {
       date: today,
       available: true,
       quizId: quizId,
       book: book,
-      chapter: chapterRef,
+      chapter: displayChapter,
       title: title,
+      language: lang,
       questionCount: submission.totalQuestions,
       submitted: true,
       score: submission.score,
       totalQuestions: submission.totalQuestions,
       answers: submission.answers,
-      questions: reviewQuestions
+      questions: questions
     };
   }
 
-  var questions = getQuestions_(quizId);
   return {
     date: today,
     available: true,
     quizId: quizId,
     book: book,
-    chapter: chapterRef,
+    chapter: displayChapter,
     title: title,
+    language: lang,
     questionCount: questionCount,
     submitted: false,
     questions: questions
   };
 }
 
-function getQuestions_(quizId) {
-  var sheet = getSheet_(CONFIG.SHEETS.QUESTIONS);
-  var data = sheet.getDataRange().getValues();
-  var questions = [];
+function loadQuestionsForQuiz_(quizId, language, includeAnswers) {
+  var lang = normalizeLanguage_(language);
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'qq:' + lang + ':' + quizId + ':' + (includeAnswers ? 'a' : 'q');
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    return JSON.parse(cached);
+  }
 
+  var sheetName = CONFIG.LANGUAGES[lang].sheet;
+  var data = getSheetData_(sheetName);
+  if (!data.length && lang !== 'en') {
+    data = getSheetData_(CONFIG.LANGUAGES.en.sheet);
+  }
+
+  var questions = [];
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][QCOL.QUIZ_ID]) === String(quizId)) {
-      questions.push(parseQuestionRow_(data[i], false));
+      if (!String(data[i][QCOL.TEXT] || '').trim()) continue;
+      questions.push(parseQuestionRow_(data[i], includeAnswers));
     }
   }
 
   questions.sort(function(a, b) { return a.id - b.id; });
+
+  try {
+    var json = JSON.stringify(questions);
+    if (json.length < 95000) {
+      cache.put(cacheKey, json, 300);
+    }
+  } catch (e) {}
+
   return questions;
 }
 
-function getQuestionsForReview_(quizId) {
-  var sheet = getSheet_(CONFIG.SHEETS.QUESTIONS);
-  var data = sheet.getDataRange().getValues();
-  var questions = [];
+function getQuestions_(quizId, language) {
+  return loadQuestionsForQuiz_(quizId, language, false);
+}
 
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][QCOL.QUIZ_ID]) === String(quizId)) {
-      questions.push(parseQuestionRow_(data[i], true));
-    }
-  }
-
-  questions.sort(function(a, b) { return a.id - b.id; });
-  return questions;
+function getQuestionsForReview_(quizId, language) {
+  return loadQuestionsForQuiz_(quizId, language, true);
 }
 
 function getSubmission_(email, date) {
-  var sheet = getSheet_(CONFIG.SHEETS.SUBMISSIONS);
-  var data = sheet.getDataRange().getValues();
+  var data = getSheetData_(CONFIG.SHEETS.SUBMISSIONS);
 
   for (var i = 1; i < data.length; i++) {
     var rowDate = data[i][1];
@@ -226,7 +278,8 @@ function getSubmission_(email, date) {
   return null;
 }
 
-function submitQuiz_(user, answers) {
+function submitQuiz_(user, answers, language) {
+  var lang = normalizeLanguage_(language);
   var today = todayDate_();
 
   // Block re-submission
@@ -235,8 +288,7 @@ function submitQuiz_(user, answers) {
     throw new Error('You have already submitted today\'s quiz. Answers cannot be changed.');
   }
 
-  var scheduleSheet = getSheet_(CONFIG.SHEETS.SCHEDULE);
-  var schedule = scheduleSheet.getDataRange().getValues();
+  var schedule = getSheetData_(CONFIG.SHEETS.SCHEDULE);
   var quizId = null;
 
   for (var i = 1; i < schedule.length; i++) {
@@ -254,10 +306,10 @@ function submitQuiz_(user, answers) {
     throw new Error('No quiz available for today');
   }
 
-  validateQuizReady_(quizId);
+  validateQuizReady_(quizId, null, null, lang);
 
   // Score the answers
-  var correctAnswers = getCorrectAnswers_(quizId);
+  var correctAnswers = getCorrectAnswers_(quizId, lang);
   var totalQuestions = Object.keys(correctAnswers).length;
   var score = 0;
   var answerMap = {};
@@ -293,6 +345,7 @@ function submitQuiz_(user, answers) {
     new Date(),
     true  // locked
   ]);
+  invalidateSheetCache_(CONFIG.SHEETS.SUBMISSIONS);
 
   // Update user stats
   updateUserStats_(user, totalPoints, isPerfect, today);
@@ -306,22 +359,19 @@ function submitQuiz_(user, answers) {
   };
 }
 
-function getCorrectAnswers_(quizId) {
-  var sheet = getSheet_(CONFIG.SHEETS.QUESTIONS);
-  var data = sheet.getDataRange().getValues();
+function getCorrectAnswers_(quizId, language) {
+  var questions = loadQuestionsForQuiz_(quizId, language, true);
   var answers = {};
 
-  for (var i = 1; i < data.length; i++) {
-    if (String(data[i][QCOL.QUIZ_ID]) === String(quizId)) {
-      answers[String(data[i][QCOL.NUM])] = normalizeCorrectAnswer_(data[i][QCOL.CORRECT]);
-    }
+  for (var i = 0; i < questions.length; i++) {
+    answers[String(questions[i].id)] = questions[i].correctAnswer;
   }
   return answers;
 }
 
 function updateUserStats_(user, points, isPerfect, today) {
   var sheet = getSheet_(CONFIG.SHEETS.USERS);
-  var data = sheet.getDataRange().getValues();
+  var data = getSheetData_(CONFIG.SHEETS.USERS);
 
   for (var i = 1; i < data.length; i++) {
     if ((data[i][0] || '').toLowerCase() === user.email.toLowerCase()) {
@@ -336,14 +386,14 @@ function updateUserStats_(user, points, isPerfect, today) {
         perfectScores,
         streak
       ]]);
+      invalidateSheetCache_(CONFIG.SHEETS.USERS);
       break;
     }
   }
 }
 
 function calculateStreak_(email, today) {
-  var sheet = getSheet_(CONFIG.SHEETS.SUBMISSIONS);
-  var data = sheet.getDataRange().getValues();
+  var data = getSheetData_(CONFIG.SHEETS.SUBMISSIONS);
   var dates = [];
 
   for (var i = 1; i < data.length; i++) {

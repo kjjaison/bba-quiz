@@ -10,6 +10,7 @@ var CONFIG = {
     OTP: 'OTP',
     SCHEDULE: 'DailySchedule',
     QUESTIONS: 'Questions',
+    QUESTIONS_MALAYALAM: 'QuestionsMalayalam',
     SUBMISSIONS: 'Submissions',
     SESSIONS: 'Sessions',
     BADGES: 'Badges',
@@ -40,8 +41,15 @@ var CONFIG = {
   // First date when rebuilding DailySchedule from the Questions sheet
   SCHEDULE_START_DATE: '2026-07-08',
 
-  // Bump this on each release to force clients to refresh cached app/session data
-  APP_VERSION: '2026-07-08.4',
+  // Bump on each release — keep in sync with mobile/lib/config/app_config.dart appVersion
+  APP_VERSION: '2026-07-10.3',
+
+  // Quiz question languages (sheet per language, same quiz_id across sheets)
+  DEFAULT_LANGUAGE: 'en',
+  LANGUAGES: {
+    en: { label: 'English', sheet: 'Questions' },
+    ml: { label: 'Malayalam', sheet: 'QuestionsMalayalam' }
+  },
 
   // Password salt prefix (change this to a random string in production)
   SALT: 'bba-quiz-2026',
@@ -77,6 +85,33 @@ function getSheet_(name) {
     throw new Error('Sheet not found: ' + name + '. Run setupSheets() first.');
   }
   return sheet;
+}
+
+var SHEET_CACHE_TTL_SEC = 90;
+
+/** Cached sheet read — avoids repeated getDataRange() calls within a request or across warm instances. */
+function getSheetData_(name) {
+  var cache = CacheService.getScriptCache();
+  var key = 'sh:' + name;
+  var cached = cache.get(key);
+  if (cached) {
+    return JSON.parse(cached);
+  }
+
+  var data = getSheet_(name).getDataRange().getValues();
+  try {
+    var json = JSON.stringify(data);
+    if (json.length < 95000) {
+      cache.put(key, json, SHEET_CACHE_TTL_SEC);
+    }
+  } catch (e) {
+    // Skip cache if sheet is too large or not serializable
+  }
+  return data;
+}
+
+function invalidateSheetCache_(name) {
+  CacheService.getScriptCache().remove('sh:' + name);
 }
 
 /** Show alert in Sheet UI, or log to Execution log when run from editor. */

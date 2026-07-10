@@ -133,5 +133,7 @@ The Apps Script backend also exposes a JSON API (`doPost` with `action` fields).
 |-------|-----|
 | Blank WebView on Android | Ensure `INTERNET` permission; use HTTPS URL |
 | "Set your Apps Script URL" message | Update `defaultUrl` or pass `--dart-define=QUIZ_URL=...` |
+| Language selector not showing | Redeploy Apps Script `index`; rebuild app (`appVersion` in `app_config.dart` must match `Config.gs`); WebView clears cache on launch |
+| Old UI in mobile WebView | Bump `appVersion` in `app_config.dart` and rebuild APK |
 | iframe blank on web | Apps Script must be deployed with **Anyone** access |
 | OTP email not sent | Same as web — authorize Gmail in Apps Script |

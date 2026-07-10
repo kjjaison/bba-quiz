@@ -6,11 +6,11 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <meta name="bba-app-version" content="2026-07-08.4" />
+  <meta name="bba-app-version" content="2026-07-10.2" />
   <title>BBA Dublin Bible Quiz</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=2026-07-08.4" />
+  <link rel="stylesheet" href="./styles.css?v=2026-07-10.2" />
 </head>
 <body>
 <div id="embed-help" class="embed-help hidden">
@@ -21,6 +21,13 @@
   <header class="header">
     <h1>BBA Dublin Bible Quiz</h1>
     <p>Daily Scripture Challenge</p>
+    <div class="header-lang">
+      <label for="lang-select">Language</label>
+      <select id="lang-select" class="lang-select" title="Quiz language">
+        <option value="en">English</option>
+        <option value="ml">Malayalam</option>
+      </select>
+    </div>
   </header>
 
   <div class="container">
@@ -108,7 +115,9 @@
     <div id="app-screen" class="hidden">
       <div class="nav-bar">
         <div class="user-info">Welcome, <strong id="user-name"></strong></div>
-        <button class="btn btn-outline btn-sm" id="btn-logout">Logout</button>
+        <div class="nav-actions">
+          <button class="btn btn-outline btn-sm" id="btn-logout">Logout</button>
+        </div>
       </div>
 
       <div class="tabs" id="app-tabs">
@@ -157,7 +166,7 @@
     "Blessed are those who hear the word of God and keep it." — Luke 11:28
   </footer>
 
-  <script src="./config.js?v=2026-07-08.4"></script>
-  <script src="./app.js?v=2026-07-08.5"></script>
+  <script src="./config.js?v=2026-07-10.2"></script>
+  <script src="./app.js?v=2026-07-10.2"></script>
 </body>
 </html>

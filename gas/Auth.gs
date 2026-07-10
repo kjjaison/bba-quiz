@@ -63,6 +63,7 @@ function createSession_(email, rememberMe) {
   var sheet = getSessionsSheet_();
 
   sheet.appendRow([email, token, expires, now, remember]);
+  invalidateSheetCache_(CONFIG.SHEETS.SESSIONS);
   pruneSessionsForUser_(email);
 
   return token;
@@ -70,9 +71,8 @@ function createSession_(email, rememberMe) {
 
 function pruneSessionsForUser_(email) {
   var sheet = getSessionsSheet_();
-  var data = sheet.getDataRange().getValues();
+  var data = getSheetData_(CONFIG.SHEETS.SESSIONS);
   var now = new Date();
-  var rowsToDelete = [];
   var active = [];
 
   for (var i = 1; i < data.length; i++) {
@@ -80,10 +80,7 @@ function pruneSessionsForUser_(email) {
     if (rowEmail !== email) continue;
 
     var expires = new Date(data[i][SESSION_COL.EXPIRES]);
-    if (expires < now) {
-      rowsToDelete.push(i + 1);
-      continue;
-    }
+    if (expires < now) continue;
 
     active.push({
       row: i + 1,
@@ -91,11 +88,6 @@ function pruneSessionsForUser_(email) {
         ? data[i][SESSION_COL.CREATED].getTime()
         : new Date(data[i][SESSION_COL.CREATED] || 0).getTime()
     });
-  }
-
-  rowsToDelete.sort(function(a, b) { return b - a; });
-  for (var d = 0; d < rowsToDelete.length; d++) {
-    sheet.deleteRow(rowsToDelete[d]);
   }
 
   var maxSessions = CONFIG.MAX_SESSIONS_PER_USER || 10;
@@ -106,11 +98,11 @@ function pruneSessionsForUser_(email) {
   for (var j = 0; j < excess; j++) {
     sheet.deleteRow(active[j].row);
   }
+  invalidateSheetCache_(CONFIG.SHEETS.SESSIONS);
 }
 
 function getUserProfileByEmail_(email) {
-  var sheet = getSheet_(CONFIG.SHEETS.USERS);
-  var data = sheet.getDataRange().getValues();
+  var data = getSheetData_(CONFIG.SHEETS.USERS);
 
   for (var i = 1; i < data.length; i++) {
     if ((data[i][0] || '').toLowerCase() === email) {
@@ -144,7 +136,7 @@ function registerUser_(email, password, displayName, rememberMe) {
   }
 
   var sheet = getSheet_(CONFIG.SHEETS.USERS);
-  var data = sheet.getDataRange().getValues();
+  var data = getSheetData_(CONFIG.SHEETS.USERS);
 
   for (var i = 1; i < data.length; i++) {
     if ((data[i][0] || '').toLowerCase() === email) {
@@ -167,6 +159,7 @@ function registerUser_(email, password, displayName, rememberMe) {
     0,
     0
   ]);
+  invalidateSheetCache_(CONFIG.SHEETS.USERS);
 
   return { email: email, displayName: displayName, token: token };
 }
@@ -178,7 +171,7 @@ function loginWithPassword_(email, password, rememberMe) {
   }
 
   var sheet = getSheet_(CONFIG.SHEETS.USERS);
-  var data = sheet.getDataRange().getValues();
+  var data = getSheetData_(CONFIG.SHEETS.USERS);
   var hash = hashPassword_(password);
 
   for (var i = 1; i < data.length; i++) {
@@ -204,7 +197,7 @@ function requestOTP_(email) {
   }
 
   var usersSheet = getSheet_(CONFIG.SHEETS.USERS);
-  var users = usersSheet.getDataRange().getValues();
+  var users = getSheetData_(CONFIG.SHEETS.USERS);
   var userExists = false;
   for (var i = 1; i < users.length; i++) {
     if ((users[i][0] || '').toLowerCase() === email) {
@@ -220,15 +213,17 @@ function requestOTP_(email) {
   var expires = new Date(Date.now() + CONFIG.OTP_EXPIRY_MINUTES * 60 * 1000);
 
   var otpSheet = getSheet_(CONFIG.SHEETS.OTP);
-  var otpData = otpSheet.getDataRange().getValues();
+  var otpData = getSheetData_(CONFIG.SHEETS.OTP);
 
   for (var j = otpData.length - 1; j >= 1; j--) {
     if ((otpData[j][0] || '').toLowerCase() === email) {
       otpSheet.deleteRow(j + 1);
     }
   }
+  invalidateSheetCache_(CONFIG.SHEETS.OTP);
 
   otpSheet.appendRow([email, otp, expires]);
+  invalidateSheetCache_(CONFIG.SHEETS.OTP);
 
   MailApp.sendEmail({
     to: email,
@@ -254,7 +249,7 @@ function loginWithOTP_(email, otp, rememberMe) {
   }
 
   var otpSheet = getSheet_(CONFIG.SHEETS.OTP);
-  var otpData = otpSheet.getDataRange().getValues();
+  var otpData = getSheetData_(CONFIG.SHEETS.OTP);
   var validOtp = false;
 
   for (var i = otpData.length - 1; i >= 1; i--) {
@@ -262,6 +257,7 @@ function loginWithOTP_(email, otp, rememberMe) {
       if (String(otpData[i][1]) === otp && new Date(otpData[i][2]) > new Date()) {
         validOtp = true;
         otpSheet.deleteRow(i + 1);
+        invalidateSheetCache_(CONFIG.SHEETS.OTP);
         break;
       }
     }
@@ -272,7 +268,7 @@ function loginWithOTP_(email, otp, rememberMe) {
   }
 
   var usersSheet = getSheet_(CONFIG.SHEETS.USERS);
-  var users = usersSheet.getDataRange().getValues();
+  var users = getSheetData_(CONFIG.SHEETS.USERS);
 
   for (var j = 1; j < users.length; j++) {
     if ((users[j][0] || '').toLowerCase() === email) {
@@ -287,6 +283,17 @@ function loginWithOTP_(email, otp, rememberMe) {
   throw new Error('User not found');
 }
 
+function userFromLoginResult_(loginResult) {
+  return {
+    email: loginResult.email,
+    displayName: loginResult.displayName,
+    totalScore: 0,
+    totalQuizzes: 0,
+    perfectScores: 0,
+    streak: 0
+  };
+}
+
 function validateSession_(token) {
   if (!token) {
     throw new Error('Authentication required');
@@ -294,20 +301,27 @@ function validateSession_(token) {
 
   token = String(token).trim();
   var sessionsSheet = getSessionsSheet_();
-  var data = sessionsSheet.getDataRange().getValues();
+  var data = getSheetData_(CONFIG.SHEETS.SESSIONS);
 
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][SESSION_COL.TOKEN]) === token) {
       var expires = new Date(data[i][SESSION_COL.EXPIRES]);
       if (expires < new Date()) {
         sessionsSheet.deleteRow(i + 1);
+        invalidateSheetCache_(CONFIG.SHEETS.SESSIONS);
         throw new Error('Session expired. Please log in again.');
       }
 
       if (CONFIG.SESSION_EXTEND_ON_USE) {
-        var remember = parseRememberMe_(data[i][SESSION_COL.REMEMBER]);
-        sessionsSheet.getRange(i + 1, SESSION_COL.EXPIRES + 1)
-          .setValue(sessionExpiresAt_(new Date(), remember));
+        var cache = CacheService.getScriptCache();
+        var extendKey = 'se:' + token.substring(0, 40);
+        if (!cache.get(extendKey)) {
+          var remember = parseRememberMe_(data[i][SESSION_COL.REMEMBER]);
+          sessionsSheet.getRange(i + 1, SESSION_COL.EXPIRES + 1)
+            .setValue(sessionExpiresAt_(new Date(), remember));
+          invalidateSheetCache_(CONFIG.SHEETS.SESSIONS);
+          cache.put(extendKey, '1', 3600);
+        }
       }
 
       var email = (data[i][SESSION_COL.EMAIL] || '').toLowerCase();
@@ -321,7 +335,7 @@ function validateSession_(token) {
 /** Backward compatibility for tokens stored on the Users sheet (single device). */
 function validateLegacySession_(token) {
   var sheet = getSheet_(CONFIG.SHEETS.USERS);
-  var data = sheet.getDataRange().getValues();
+  var data = getSheetData_(CONFIG.SHEETS.USERS);
 
   for (var i = 1; i < data.length; i++) {
     if (String(data[i][4]) === token) {
@@ -338,6 +352,7 @@ function validateLegacySession_(token) {
         new Date(),
         true
       ]);
+      invalidateSheetCache_(CONFIG.SHEETS.SESSIONS);
       pruneSessionsForUser_(email);
 
       return getUserProfileByEmail_(email);

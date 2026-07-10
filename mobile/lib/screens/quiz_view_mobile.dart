@@ -22,7 +22,7 @@ class _QuizViewState extends State<QuizView> {
     _initWebView();
   }
 
-  void _initWebView() {
+  Future<void> _initWebView() async {
     if (widget.url.contains('YOUR_DEPLOYMENT_ID')) {
       setState(() {
         _loading = false;
@@ -46,8 +46,10 @@ class _QuizViewState extends State<QuizView> {
             });
           },
         ),
-      )
-      ..loadRequest(Uri.parse(widget.url));
+      );
+
+    await _controller.clearCache();
+    await _controller.loadRequest(Uri.parse(widget.url));
   }
 
   @override

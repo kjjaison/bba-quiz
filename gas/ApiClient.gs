@@ -1,30 +1,45 @@
 /**
  * Client-callable wrappers for google.script.run (when HTML is served from Apps Script)
  */
-function apiRegister(email, password, displayName, rememberMe) {
-  return { success: true, user: registerUser_(email, password, displayName, rememberMe) };
+function apiRegister(email, password, displayName, rememberMe, language) {
+  var response = authResponseWithQuiz_(
+    registerUser_(email, password, displayName, rememberMe),
+    language
+  );
+  response.success = true;
+  return response;
 }
 
-function apiLogin(email, password, rememberMe) {
-  return { success: true, user: loginWithPassword_(email, password, rememberMe) };
+function apiLogin(email, password, rememberMe, language) {
+  var response = authResponseWithQuiz_(
+    loginWithPassword_(email, password, rememberMe),
+    language
+  );
+  response.success = true;
+  return response;
 }
 
 function apiRequestOtp(email) {
   return { success: true, data: requestOTP_(email) };
 }
 
-function apiLoginOtp(email, otp, rememberMe) {
-  return { success: true, user: loginWithOTP_(email, otp, rememberMe) };
+function apiLoginOtp(email, otp, rememberMe, language) {
+  var response = authResponseWithQuiz_(
+    loginWithOTP_(email, otp, rememberMe),
+    language
+  );
+  response.success = true;
+  return response;
 }
 
-function apiGetQuiz(token) {
+function apiGetQuiz(token, language) {
   var user = validateSession_(token);
-  return { success: true, quiz: getTodayQuiz_(user) };
+  return { success: true, quiz: getTodayQuiz_(user, language) };
 }
 
-function apiSubmitQuiz(token, answers) {
+function apiSubmitQuiz(token, answers, language) {
   var user = validateSession_(token);
-  return { success: true, result: submitQuiz_(user, answers) };
+  return { success: true, result: submitQuiz_(user, answers, language) };
 }
 
 function apiLeaderboard(token, period) {

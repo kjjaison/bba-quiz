@@ -35,7 +35,7 @@ if ($scriptMatches.Count -eq 0) {
   throw "Could not find <script> blocks in gas/index.html"
 }
 $js = $scriptMatches[$scriptMatches.Count - 1].Groups["js"].Value.Trim()
-$js = $js -replace "const APP_VERSION = '__APP_VERSION__';", "const APP_VERSION = '$appVersion';"
+$js = $js -replace "const APP_VERSION = '\<\?= appVersion \?\>';", "const APP_VERSION = '$appVersion';"
 $js = $js -replace "const url = window\.BBA_API_URL \|\| '';", "const url = window.BBA_API_URL || '/api';"
 
 $bodyMatch = [regex]::Match($content, "<body>\s*(?<body>[\s\S]*?)\s*</body>")
@@ -63,7 +63,7 @@ $index = @"
 <body>
 $body
 
-  <script src="./config.js"></script>
+  <script src="./config.js?v=$appVersion"></script>
   <script src="./app.js?v=$appVersion"></script>
 </body>
 </html>

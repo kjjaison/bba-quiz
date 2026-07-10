@@ -27,6 +27,11 @@ function setupSheets() {
     'option_a', 'option_b', 'option_c', 'option_d', 'correct_answer'
   ]);
 
+  createSheetWithHeaders_(ss, CONFIG.SHEETS.QUESTIONS_MALAYALAM, [
+    'quiz_id', 'question_num', 'question', 'book_reference',
+    'option_a', 'option_b', 'option_c', 'option_d', 'correct_answer'
+  ]);
+
   createSheetWithHeaders_(ss, CONFIG.SHEETS.SUBMISSIONS, [
     'email', 'quiz_date', 'answers_json', 'score', 'total_questions',
     'submitted_at', 'locked'
@@ -198,13 +203,20 @@ function validateUpcomingQuizzes() {
       continue;
     }
 
-    var count = countQuestionsForQuiz_(quizId);
+    var countEn = countQuestionsForQuiz_(quizId, 'en');
+    var countMl = countQuestionsForQuiz_(quizId, 'ml');
     var label = book + ' ' + chapter + ' (' + quizId + ')';
 
-    if (count < minRequired) {
-      issues.push(dateStr + ' — ' + label + ': ' + count + '/' + minRequired + ' questions');
+    if (countEn < minRequired) {
+      issues.push(dateStr + ' — ' + label + ': English ' + countEn + '/' + minRequired);
     } else {
-      ok.push(dateStr + ' — ' + label + ': ' + count + ' questions');
+      ok.push(dateStr + ' — ' + label + ': English ' + countEn + ' questions');
+    }
+
+    if (countMl < minRequired) {
+      issues.push(dateStr + ' — ' + label + ': Malayalam ' + countMl + '/' + minRequired);
+    } else {
+      ok.push(dateStr + ' — ' + label + ': Malayalam ' + countMl + ' questions');
     }
   }
 

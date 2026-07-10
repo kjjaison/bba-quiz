@@ -4,10 +4,8 @@
 
 function getLeaderboard_(period) {
   period = period || 'all';
-  var sheet = getSheet_(CONFIG.SHEETS.SUBMISSIONS);
-  var data = sheet.getDataRange().getValues();
-  var usersSheet = getSheet_(CONFIG.SHEETS.USERS);
-  var users = usersSheet.getDataRange().getValues();
+  var data = getSheetData_(CONFIG.SHEETS.SUBMISSIONS);
+  var users = getSheetData_(CONFIG.SHEETS.USERS);
 
   var displayNames = {};
   for (var u = 1; u < users.length; u++) {

@@ -14,12 +14,12 @@ function doGet(e) {
   return serveIndexHtml_();
 }
 
-/** Serve index HTML; inject version via string replace (no template tags). */
+/** Serve index HTML via template (createHtmlOutputFromFile().getContent() is not supported). */
 function serveIndexHtml_() {
   try {
-    var html = HtmlService.createHtmlOutputFromFile('index').getContent();
-    html = html.replace(/__APP_VERSION__/g, CONFIG.APP_VERSION);
-    return HtmlService.createHtmlOutput(html)
+    var template = HtmlService.createTemplateFromFile('index');
+    template.appVersion = CONFIG.APP_VERSION;
+    return template.evaluate()
       .setTitle('BBA Dublin Bible Quiz')
       .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
       .addMetaTag('viewport', 'width=device-width, initial-scale=1');
@@ -42,7 +42,6 @@ function doPost(e) {
   return handleApi_(e);
 }
 
-/** Normalize query-string API params (GET calls from external frontends). */
 function normalizeApiParams_(params) {
   var result = {};
   for (var key in params) {
@@ -63,6 +62,16 @@ function normalizeApiParams_(params) {
   return result;
 }
 
+function authResponseWithQuiz_(user, language) {
+  var response = { user: user };
+  try {
+    response.quiz = getTodayQuiz_(userFromLoginResult_(user), language);
+  } catch (err) {
+    Logger.log('Quiz prefetch failed: ' + (err.message || err));
+  }
+  return response;
+}
+
 function handleApi_(e) {
   try {
     var params = {};
@@ -77,38 +86,41 @@ function handleApi_(e) {
 
     switch (action) {
       case 'register':
-        return successResponse_({
-          user: registerUser_(
+        return successResponse_(authResponseWithQuiz_(
+          registerUser_(
             params.email,
             params.password,
             params.displayName,
             params.rememberMe
-          )
-        });
+          ),
+          params.language
+        ));
 
       case 'login':
-        return successResponse_({
-          user: loginWithPassword_(params.email, params.password, params.rememberMe)
-        });
+        return successResponse_(authResponseWithQuiz_(
+          loginWithPassword_(params.email, params.password, params.rememberMe),
+          params.language
+        ));
 
       case 'requestOtp':
         return successResponse_(requestOTP_(params.email));
 
       case 'loginOtp':
-        return successResponse_({
-          user: loginWithOTP_(params.email, params.otp, params.rememberMe)
-        });
+        return successResponse_(authResponseWithQuiz_(
+          loginWithOTP_(params.email, params.otp, params.rememberMe),
+          params.language
+        ));
 
       case 'quiz':
         var quizUser = validateSession_(token);
         return successResponse_({
-          quiz: getTodayQuiz_(quizUser)
+          quiz: getTodayQuiz_(quizUser, params.language)
         });
 
       case 'submit':
         var submitUser = validateSession_(token);
         return successResponse_({
-          result: submitQuiz_(submitUser, params.answers || {})
+          result: submitQuiz_(submitUser, params.answers || {}, params.language)
         });
 
       case 'leaderboard':

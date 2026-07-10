@@ -33,7 +33,7 @@ class QuizScreen extends StatelessWidget {
   const QuizScreen({super.key});
 
   Future<void> _openInBrowser() async {
-    final uri = Uri.parse(AppConfig.quizUrl);
+    final uri = Uri.parse(AppConfig.versionedQuizUrl);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri, mode: LaunchMode.externalApplication);
     }
@@ -73,7 +73,7 @@ class QuizScreen extends StatelessWidget {
         ],
       ),
       body: SafeArea(
-        child: QuizView(url: AppConfig.quizUrl),
+        child: QuizView(url: AppConfig.versionedQuizUrl),
       ),
     );
   }

@@ -1,8 +1,8 @@
-const APP_VERSION = '2026-07-08.4';
+const APP_VERSION = '2026-07-10.2';
     const VERSION_KEY = 'bba_quiz_app_version';
 
     (function enforceAppVersion() {
-      if (!APP_VERSION || APP_VERSION === '__APP_VERSION__') return;
+      if (!APP_VERSION) return;
 
       let storedVersion = null;
       try {
@@ -63,6 +63,26 @@ const APP_VERSION = '2026-07-08.4';
     const REMEMBER_PREF_KEY = 'bba_quiz_remember';
     const SESSION_TOKEN_KEY = 'bba_quiz_session_token';
     const SESSION_USER_KEY = 'bba_quiz_session_user';
+    const LANG_KEY = 'bba_quiz_language';
+
+    function getLanguage() {
+      try {
+        return localStorage.getItem(LANG_KEY) || 'en';
+      } catch (e) {
+        return 'en';
+      }
+    }
+
+    function setLanguage(lang) {
+      try {
+        localStorage.setItem(LANG_KEY, lang);
+      } catch (e) { /* ignore */ }
+    }
+
+    function syncLanguageSelect() {
+      const select = document.getElementById('lang-select');
+      if (select) select.value = getLanguage();
+    }
 
     function isRememberPrefEnabled() {
       return localStorage.getItem(REMEMBER_PREF_KEY) !== 'false';
@@ -97,6 +117,7 @@ const APP_VERSION = '2026-07-08.4';
     let currentUser = storedSession.user;
     let currentQuiz = null;
     let selectedAnswers = {};
+    let currentQuestionIndex = 0;
 
     // API layer: google.script.run on Apps Script; fetch elsewhere (Firebase, etc.)
     async function fetchApiResponse(url, action, params) {
@@ -177,8 +198,8 @@ const APP_VERSION = '2026-07-08.4';
               : action === 'login' ? [params.email, params.password, params.rememberMe]
               : action === 'requestOtp' ? [params.email]
               : action === 'loginOtp' ? [params.email, params.otp, params.rememberMe]
-              : action === 'quiz' ? [params.token]
-              : action === 'submit' ? [params.token, params.answers]
+              : action === 'quiz' ? [params.token, params.language]
+              : action === 'submit' ? [params.token, params.answers, params.language]
               : action === 'leaderboard' ? [params.token, params.period]
               : action === 'profile' ? [params.token]
               : [];
@@ -253,6 +274,7 @@ const APP_VERSION = '2026-07-08.4';
       document.getElementById('auth-screen').classList.add('hidden');
       document.getElementById('app-screen').classList.remove('hidden');
       document.getElementById('user-name').textContent = currentUser.displayName;
+      syncLanguageSelect();
       loadQuiz();
     }
 
@@ -371,6 +393,13 @@ const APP_VERSION = '2026-07-08.4';
       showAuth();
     });
 
+    document.getElementById('lang-select').addEventListener('change', e => {
+      setLanguage(e.target.value);
+      if (!document.getElementById('app-screen').classList.contains('hidden')) {
+        loadQuiz();
+      }
+    });
+
     document.getElementById('btn-reset-cache').addEventListener('click', e => {
       e.preventDefault();
       clearSession();
@@ -382,8 +411,14 @@ const APP_VERSION = '2026-07-08.4';
       document.getElementById('quiz-loading').classList.remove('hidden');
       document.getElementById('quiz-content').classList.add('hidden');
       try {
-        const res = await API.call('quiz', { token: currentToken });
+        const res = await API.call('quiz', { token: currentToken, language: getLanguage() });
+        currentQuestionIndex = 0;
+        selectedAnswers = {};
         currentQuiz = res.quiz;
+        if (currentQuiz.language && currentQuiz.language !== getLanguage()) {
+          setLanguage(currentQuiz.language);
+          syncLanguageSelect();
+        }
         renderQuiz(currentQuiz);
       } catch (err) {
         if (err.message && err.message.includes('Session')) {
@@ -399,18 +434,8 @@ const APP_VERSION = '2026-07-08.4';
       document.getElementById('quiz-loading').classList.add('hidden');
     }
 
-    function renderQuiz(quiz) {
-      const container = document.getElementById('quiz-content');
-      selectedAnswers = {};
-
-      if (!quiz.available) {
-        container.innerHTML = '<div class="card"><div class="alert alert-info">' + quiz.message + '</div></div>';
-        container.classList.remove('hidden');
-        return;
-      }
-
-      let html = '<div class="card">';
-      html += '<div class="quiz-header">';
+    function renderQuizHeader(quiz) {
+      let html = '<div class="quiz-header">';
       html += '<div class="chapter">' + escapeHtml(quiz.title || quiz.book + ' ' + quiz.chapter) + '</div>';
       html += '<div class="date">' + quiz.date + '</div>';
       const qCount = quiz.questionCount || (quiz.questions || []).length;
@@ -418,42 +443,117 @@ const APP_VERSION = '2026-07-08.4';
         html += '<div class="question-count">' + qCount + ' questions today</div>';
       }
       html += '</div>';
+      return html;
+    }
 
-      if (quiz.submitted) {
-        html += '<div class="score-result">';
-        html += '<div class="score-circle"><div class="points">' + quiz.score + '</div><div class="label">points</div></div>';
-        html += '<p style="color:var(--text-muted);">Quiz completed — answers are locked</p>';
-        html += '</div>';
+    function bindQuestionOptions(container) {
+      container.querySelectorAll('.option').forEach(opt => {
+        opt.addEventListener('click', () => {
+          const qId = opt.dataset.qid;
+          const letter = opt.dataset.letter;
+          selectedAnswers[qId] = letter;
+          opt.closest('.options').querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
+          opt.classList.add('selected');
+          opt.querySelector('input').checked = true;
+        });
+      });
+    }
 
-        (quiz.questions || []).forEach((q, idx) => {
-          const userAns = (quiz.answers || {})[String(q.id)] || '';
-          html += renderQuestion(q, idx + 1, true, userAns);
-        });
-      } else {
-        (quiz.questions || []).forEach((q, idx) => {
-          html += renderQuestion(q, idx + 1, false);
-        });
-        html += '<button class="btn btn-primary" id="btn-submit-quiz" style="margin-top:1rem;">Submit Answers</button>';
+    function renderActiveQuestion(quiz) {
+      const container = document.getElementById('quiz-content');
+      const questions = quiz.questions || [];
+      const total = questions.length;
+
+      if (total === 0) {
+        container.innerHTML = '<div class="card"><div class="alert alert-info">No questions available.</div></div>';
+        container.classList.remove('hidden');
+        return;
       }
+
+      if (currentQuestionIndex >= total) currentQuestionIndex = total - 1;
+      if (currentQuestionIndex < 0) currentQuestionIndex = 0;
+
+      const q = questions[currentQuestionIndex];
+      const num = currentQuestionIndex + 1;
+      const userAnswer = selectedAnswers[String(q.id)] || '';
+      const navClass = currentQuestionIndex > 0 ? 'quiz-nav' : 'quiz-nav quiz-nav-end';
+
+      let html = '<div class="card">';
+      html += renderQuizHeader(quiz);
+      html += '<div class="quiz-progress">Question ' + num + ' of ' + total + '</div>';
+      html += renderQuestion(q, num, false, userAnswer);
+      html += '<div class="' + navClass + '">';
+
+      if (currentQuestionIndex > 0) {
+        html += '<button type="button" class="btn btn-outline" id="btn-prev-quiz">Previous</button>';
+      }
+      if (currentQuestionIndex < total - 1) {
+        html += '<button type="button" class="btn btn-primary" id="btn-next-quiz">Next</button>';
+      } else {
+        html += '<button type="button" class="btn btn-primary" id="btn-submit-quiz">Submit Answers</button>';
+      }
+
+      html += '</div></div>';
+      container.innerHTML = html;
+      container.classList.remove('hidden');
+
+      bindQuestionOptions(container);
+
+      const prevBtn = document.getElementById('btn-prev-quiz');
+      if (prevBtn) {
+        prevBtn.addEventListener('click', () => {
+          currentQuestionIndex--;
+          renderActiveQuestion(quiz);
+        });
+      }
+
+      const nextBtn = document.getElementById('btn-next-quiz');
+      if (nextBtn) {
+        nextBtn.addEventListener('click', () => {
+          if (!selectedAnswers[String(q.id)]) {
+            showAlert('alert-app', 'Please select an answer before continuing.', 'error');
+            return;
+          }
+          currentQuestionIndex++;
+          renderActiveQuestion(quiz);
+        });
+      }
+
+      const submitBtn = document.getElementById('btn-submit-quiz');
+      if (submitBtn) {
+        submitBtn.addEventListener('click', submitQuiz);
+      }
+    }
+
+    function renderQuiz(quiz) {
+      const container = document.getElementById('quiz-content');
+
+      if (!quiz.available) {
+        container.innerHTML = '<div class="card"><div class="alert alert-info">' + quiz.message + '</div></div>';
+        container.classList.remove('hidden');
+        return;
+      }
+
+      if (!quiz.submitted) {
+        renderActiveQuestion(quiz);
+        return;
+      }
+
+      let html = '<div class="card">';
+      html += renderQuizHeader(quiz);
+      html += '<div class="score-result">';
+      html += '<div class="score-circle"><div class="points">' + quiz.score + '</div><div class="label">points</div></div>';
+      html += '<p style="color:var(--text-muted);">Quiz completed — answers are locked</p>';
+      html += '</div>';
+
+      (quiz.questions || []).forEach((q, idx) => {
+        const userAns = (quiz.answers || {})[String(q.id)] || '';
+        html += renderQuestion(q, idx + 1, true, userAns);
+      });
 
       html += '</div>';
       container.innerHTML = html;
       container.classList.remove('hidden');
-
-      if (!quiz.submitted) {
-        container.querySelectorAll('.option').forEach(opt => {
-          opt.addEventListener('click', () => {
-            const qId = opt.dataset.qid;
-            const letter = opt.dataset.letter;
-            selectedAnswers[qId] = letter;
-            opt.closest('.options').querySelectorAll('.option').forEach(o => o.classList.remove('selected'));
-            opt.classList.add('selected');
-            opt.querySelector('input').checked = true;
-          });
-        });
-
-        document.getElementById('btn-submit-quiz').addEventListener('click', submitQuiz);
-      }
     }
 
     function renderQuestion(q, num, locked, userAnswer) {
@@ -483,6 +583,12 @@ const APP_VERSION = '2026-07-08.4';
 
     async function submitQuiz() {
       const questions = currentQuiz.questions || [];
+      const currentQ = questions[currentQuestionIndex];
+      if (currentQ && !selectedAnswers[String(currentQ.id)]) {
+        showAlert('alert-app', 'Please select an answer before submitting.', 'error');
+        return;
+      }
+
       const unanswered = questions.filter(q => !selectedAnswers[String(q.id)]);
       if (unanswered.length > 0) {
         showAlert('alert-app', 'Please answer all ' + questions.length + ' questions before submitting.', 'error');
@@ -492,7 +598,7 @@ const APP_VERSION = '2026-07-08.4';
       const btn = document.getElementById('btn-submit-quiz');
       setLoading(btn, true);
       try {
-        const res = await API.call('submit', { token: currentToken, answers: selectedAnswers });
+        const res = await API.call('submit', { token: currentToken, answers: selectedAnswers, language: getLanguage() });
         showAlert('alert-app',
           'Quiz submitted! You scored ' + res.result.score + ' points (' + res.result.percentage + '%)' +
           (res.result.isPerfect ? ' — Perfect score! ⭐' : ''), 'success');
