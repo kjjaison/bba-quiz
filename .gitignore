@@ -21,3 +21,6 @@ Thumbs.db
 .env
 web-frontend/config.js
 *.credentials.json
+
+# Firebase
+.firebase/
