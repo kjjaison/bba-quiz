@@ -1,0 +1,19 @@
+{
+  "hosting": {
+    "public": "web-frontend",
+    "ignore": [
+      "firebase.json",
+      "firebase.spark.json",
+      "**/.*",
+      "**/node_modules/**",
+      "README.md",
+      "config.example.js"
+    ],
+    "rewrites": [
+      {
+        "source": "**",
+        "destination": "/index.html"
+      }
+    ]
+  }
+}

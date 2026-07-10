@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+  <meta http-equiv="Pragma" content="no-cache" />
+  <meta http-equiv="Expires" content="0" />
+  <meta name="bba-app-version" content="2026-07-08.4" />
+  <title>BBA Dublin Bible Quiz</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css?v=2026-07-08.4" />
+</head>
+<body>
+<div id="embed-help" class="embed-help hidden">
+    Quiz not loading in this frame?
+    <a id="embed-open-link" href="#" target="_top" rel="noopener">Open quiz full screen</a>
+  </div>
+
+  <header class="header">
+    <h1>BBA Dublin Bible Quiz</h1>
+    <p>Daily Scripture Challenge</p>
+  </header>
+
+  <div class="container">
+    <!-- Auth Screen -->
+    <div id="auth-screen">
+      <div class="card">
+        <div class="tabs" id="auth-tabs">
+          <button class="tab active" data-tab="login">Login</button>
+          <button class="tab" data-tab="register">Register</button>
+        </div>
+
+        <div id="alert-auth" class="alert hidden"></div>
+        <p class="trouble-row">
+          Page blank or error?
+          <a href="#" id="btn-reset-cache">Reset app cache</a>
+        </p>
+
+        <!-- Login -->
+        <div id="panel-login">
+          <div class="tabs" style="margin-bottom:1rem;">
+            <button class="tab active" data-login-mode="password">Password</button>
+            <button class="tab" data-login-mode="otp">Email OTP</button>
+          </div>
+
+          <div id="login-password-form">
+            <div class="form-group">
+              <label for="login-email">Email</label>
+              <input type="email" id="login-email" placeholder="your@email.com" required>
+            </div>
+            <div class="form-group">
+              <label for="login-password">Password</label>
+              <input type="password" id="login-password" placeholder="Your password" required>
+            </div>
+            <label class="remember-row">
+              <input type="checkbox" id="remember-login" checked>
+              Remember me on this device
+            </label>
+            <button class="btn btn-primary" id="btn-login">Sign In</button>
+          </div>
+
+          <div id="login-otp-form" class="hidden">
+            <div class="form-group">
+              <label for="otp-email">Email</label>
+              <input type="email" id="otp-email" placeholder="your@email.com" required>
+            </div>
+            <button class="btn btn-primary" id="btn-send-otp">Send Login Code</button>
+            <div id="otp-code-section" class="hidden" style="margin-top:1rem;">
+              <div class="form-group">
+                <label for="otp-code">Enter 6-digit code</label>
+                <input type="text" id="otp-code" placeholder="000000" maxlength="6" pattern="[0-9]{6}">
+              </div>
+              <label class="remember-row">
+                <input type="checkbox" id="remember-otp" checked>
+                Remember me on this device
+              </label>
+              <button class="btn btn-primary" id="btn-login-otp">Verify & Sign In</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Register -->
+        <div id="panel-register" class="hidden">
+          <div class="form-group">
+            <label for="reg-name">Display Name</label>
+            <input type="text" id="reg-name" placeholder="Your name" required>
+          </div>
+          <div class="form-group">
+            <label for="reg-email">Email</label>
+            <input type="email" id="reg-email" placeholder="your@email.com" required>
+          </div>
+          <div class="form-group">
+            <label for="reg-password">Password</label>
+            <input type="password" id="reg-password" placeholder="At least 6 characters" required>
+          </div>
+          <label class="remember-row">
+            <input type="checkbox" id="remember-register" checked>
+            Remember me on this device
+          </label>
+          <button class="btn btn-primary" id="btn-register">Create Account</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Main App -->
+    <div id="app-screen" class="hidden">
+      <div class="nav-bar">
+        <div class="user-info">Welcome, <strong id="user-name"></strong></div>
+        <button class="btn btn-outline btn-sm" id="btn-logout">Logout</button>
+      </div>
+
+      <div class="tabs" id="app-tabs">
+        <button class="tab active" data-view="quiz">Today's Quiz</button>
+        <button class="tab" data-view="leaderboard">Scoreboard</button>
+        <button class="tab" data-view="profile">Profile</button>
+      </div>
+
+      <div id="alert-app" class="alert hidden"></div>
+
+      <!-- Quiz View -->
+      <div id="view-quiz">
+        <div id="quiz-loading" class="loading">
+          <div class="spinner"></div>
+          Loading today's quiz...
+        </div>
+        <div id="quiz-content" class="hidden"></div>
+      </div>
+
+      <!-- Leaderboard View -->
+      <div id="view-leaderboard" class="hidden">
+        <div class="card">
+          <div class="tabs" id="lb-tabs">
+            <button class="tab active" data-period="all">All Time</button>
+            <button class="tab" data-period="monthly">Monthly</button>
+            <button class="tab" data-period="weekly">Weekly</button>
+          </div>
+          <div id="leaderboard-content">
+            <div class="loading"><div class="spinner"></div>Loading...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Profile View -->
+      <div id="view-profile" class="hidden">
+        <div class="card">
+          <div class="stats-row" id="profile-stats"></div>
+          <h3 style="margin-bottom:1rem;">Your Badges</h3>
+          <div class="badges-grid" id="badges-grid"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="verse-footer">
+    "Blessed are those who hear the word of God and keep it." — Luke 11:28
+  </footer>
+
+  <script src="./config.js?v=2026-07-08.4"></script>
+  <script src="./app.js?v=2026-07-08.5"></script>
+</body>
+</html>

@@ -14,12 +14,10 @@ function doGet(e) {
   return serveIndexHtml_();
 }
 
-/** Serve index HTML without Apps Script template tags (avoids <? parsing bugs). */
+/** Serve index HTML; inject version via string replace (no template tags). */
 function serveIndexHtml_() {
   try {
-    var html = HtmlService.createHtmlOutputFromFile('index')
-      .evaluate()
-      .getContent();
+    var html = HtmlService.createHtmlOutputFromFile('index').getContent();
     html = html.replace(/__APP_VERSION__/g, CONFIG.APP_VERSION);
     return HtmlService.createHtmlOutput(html)
       .setTitle('BBA Dublin Bible Quiz')
@@ -44,13 +42,34 @@ function doPost(e) {
   return handleApi_(e);
 }
 
+/** Normalize query-string API params (GET calls from external frontends). */
+function normalizeApiParams_(params) {
+  var result = {};
+  for (var key in params) {
+    if (!params.hasOwnProperty(key)) continue;
+    var val = params[key];
+    if (key === 'answers' && typeof val === 'string') {
+      try {
+        result.answers = JSON.parse(val);
+      } catch (err) {
+        result.answers = {};
+      }
+    } else if (key === 'rememberMe') {
+      result.rememberMe = val === true || val === 'true' || val === '1';
+    } else {
+      result[key] = val;
+    }
+  }
+  return result;
+}
+
 function handleApi_(e) {
   try {
     var params = {};
     if (e.postData && e.postData.contents) {
       params = JSON.parse(e.postData.contents);
     } else if (e.parameter) {
-      params = e.parameter;
+      params = normalizeApiParams_(e.parameter);
     }
 
     var action = params.action || (e.parameter && e.parameter.action);

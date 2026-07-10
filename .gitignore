@@ -19,4 +19,5 @@ Thumbs.db
 
 # Secrets
 .env
+web-frontend/config.js
 *.credentials.json
