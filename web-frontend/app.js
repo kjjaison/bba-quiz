@@ -1,4 +1,4 @@
-const APP_VERSION = '2026-07-14.4';
+const APP_VERSION = '2026-07-14.7';
     const VERSION_KEY = 'bba_quiz_app_version';
 
     (function enforceAppVersion() {
@@ -573,8 +573,10 @@ const APP_VERSION = '2026-07-14.4';
     // Quiz
     function applyQuizData(quiz) {
       currentQuestionIndex = 0;
-      selectedAnswers = {};
       currentQuiz = quiz;
+      selectedAnswers = quiz.submitted && quiz.answers
+        ? Object.assign({}, quiz.answers)
+        : {};
       if (quiz.language && quiz.language !== getLanguage()) {
         setLanguage(quiz.language);
         syncLanguageSelect();
@@ -617,8 +619,10 @@ const APP_VERSION = '2026-07-14.4';
     }
 
     function bindQuestionOptions(container) {
+      if (currentQuiz && currentQuiz.submitted === true) return;
       container.querySelectorAll('.option').forEach(opt => {
         opt.addEventListener('click', () => {
+          if (currentQuiz && currentQuiz.submitted === true) return;
           const qId = opt.dataset.qid;
           const letter = opt.dataset.letter;
           selectedAnswers[qId] = letter;
@@ -630,6 +634,10 @@ const APP_VERSION = '2026-07-14.4';
     }
 
     function renderActiveQuestion(quiz) {
+      if (quiz.submitted === true) {
+        renderQuiz(quiz);
+        return;
+      }
       const container = document.getElementById('quiz-content');
       const questions = quiz.questions || [];
       const total = questions.length;
@@ -704,26 +712,26 @@ const APP_VERSION = '2026-07-14.4';
         return;
       }
 
-      if (!quiz.submitted) {
-        renderActiveQuestion(quiz);
+      if (quiz.submitted === true) {
+        let html = '<div class="card">';
+        html += renderQuizHeader(quiz);
+        html += '<div class="score-result">';
+        html += '<div class="score-circle"><div class="points">' + quiz.score + '</div><div class="label">points</div></div>';
+        html += '<p style="color:var(--text-muted);">Quiz completed — answers are locked</p>';
+        html += '</div>';
+
+        (quiz.questions || []).forEach((q, idx) => {
+          const userAns = (quiz.answers || {})[String(q.id)] || '';
+          html += renderQuestion(q, idx + 1, true, userAns);
+        });
+
+        html += '</div>';
+        container.innerHTML = html;
+        container.classList.remove('hidden');
         return;
       }
 
-      let html = '<div class="card">';
-      html += renderQuizHeader(quiz);
-      html += '<div class="score-result">';
-      html += '<div class="score-circle"><div class="points">' + quiz.score + '</div><div class="label">points</div></div>';
-      html += '<p style="color:var(--text-muted);">Quiz completed — answers are locked</p>';
-      html += '</div>';
-
-      (quiz.questions || []).forEach((q, idx) => {
-        const userAns = (quiz.answers || {})[String(q.id)] || '';
-        html += renderQuestion(q, idx + 1, true, userAns);
-      });
-
-      html += '</div>';
-      container.innerHTML = html;
-      container.classList.remove('hidden');
+      renderActiveQuestion(quiz);
     }
 
     function normalizeQuestionOptions(options) {
@@ -801,6 +809,13 @@ const APP_VERSION = '2026-07-14.4';
       setLoading(btn, true);
       try {
         const res = await API.call('submit', { token: currentToken, answers: selectedAnswers, language: getLanguage() });
+        const submittedAnswers = Object.assign({}, selectedAnswers);
+        applyQuizData(Object.assign({}, currentQuiz, {
+          submitted: true,
+          score: res.result.score,
+          totalQuestions: res.result.totalQuestions,
+          answers: res.result.answers || submittedAnswers
+        }));
         showAlert('alert-app',
           'Quiz submitted! You scored ' + res.result.score + ' points (' + res.result.percentage + '%)' +
           (res.result.isPerfect ? ' — Perfect score! ⭐' : ''), 'success');
@@ -852,12 +867,18 @@ const APP_VERSION = '2026-07-14.4';
           '<div class="stat-box"><div class="stat-value">' + stats.totalQuizzes + '</div><div class="stat-label">Quizzes Done</div></div>';
 
         const badges = p.badges || [];
+        const earnedCount = badges.filter(b => b.earned).length;
+        document.getElementById('badge-count').textContent =
+          earnedCount + ' of ' + badges.length + ' earned';
+
         if (badges.length === 0) {
           document.getElementById('badges-grid').innerHTML =
             '<p style="color:var(--text-muted);grid-column:1/-1;text-align:center;">Complete quizzes to earn badges!</p>';
         } else {
-          document.getElementById('badges-grid').innerHTML = badges.map(b =>
-            '<div class="badge-card"><div class="badge-icon">' + b.icon + '</div>' +
+          const sorted = badges.slice().sort((a, b) => Number(b.earned) - Number(a.earned));
+          document.getElementById('badges-grid').innerHTML = sorted.map(b =>
+            '<div class="badge-card' + (b.earned ? '' : ' badge-locked') + '">' +
+            '<div class="badge-icon">' + b.icon + '</div>' +
             '<div class="badge-name">' + escapeHtml(b.name) + '</div>' +
             '<div class="badge-desc">' + escapeHtml(b.description) + '</div></div>'
           ).join('');

@@ -61,26 +61,6 @@ function getLeaderboard_(period) {
 }
 
 function getUserProfile_(user) {
-  var stats = {
-    totalScore: user.totalScore,
-    totalQuizzes: user.totalQuizzes,
-    perfectScores: user.perfectScores,
-    streak: user.streak
-  };
-
-  var badges = [];
-  for (var i = 0; i < CONFIG.BADGE_RULES.length; i++) {
-    var rule = CONFIG.BADGE_RULES[i];
-    if (rule.check(stats)) {
-      badges.push({
-        id: rule.id,
-        name: rule.name,
-        icon: rule.icon,
-        description: rule.description
-      });
-    }
-  }
-
   // Rank in all-time leaderboard
   var allTime = getLeaderboard_('all');
   var rank = 0;
@@ -89,6 +69,26 @@ function getUserProfile_(user) {
       rank = allTime[j].rank;
       break;
     }
+  }
+
+  var stats = {
+    totalScore: user.totalScore,
+    totalQuizzes: user.totalQuizzes,
+    perfectScores: user.perfectScores,
+    streak: user.streak,
+    rank: rank
+  };
+
+  var badges = [];
+  for (var i = 0; i < CONFIG.BADGE_RULES.length; i++) {
+    var rule = CONFIG.BADGE_RULES[i];
+    badges.push({
+      id: rule.id,
+      name: rule.name,
+      icon: rule.icon,
+      description: rule.description,
+      earned: rule.check(stats)
+    });
   }
 
   return {

@@ -262,12 +262,55 @@
 
     .profile-section {
       margin-top: 1.5rem;
-      padding-top: 1.5rem;
+      padding-top: 0.5rem;
       border-top: 1px solid var(--border);
     }
 
-    .profile-section h3 {
-      margin-bottom: 1rem;
+    .profile-collapse summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: var(--primary);
+      list-style: none;
+      padding: 0.75rem 0;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      user-select: none;
+    }
+
+    .profile-collapse summary::-webkit-details-marker { display: none; }
+
+    .profile-collapse summary::after {
+      content: '▼';
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      transition: transform 0.2s ease;
+    }
+
+    .profile-collapse[open] summary::after {
+      transform: rotate(180deg);
+    }
+
+    .profile-collapse-body {
+      padding: 0.25rem 0 1rem;
+    }
+
+    .profile-badges-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 0.75rem;
+      margin: 1.25rem 0 1rem;
+    }
+
+    .profile-badges-header h3 {
+      margin: 0;
+    }
+
+    .badge-count {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      font-weight: 500;
     }
 
     .quiz-header {
@@ -427,16 +470,25 @@
 
     .badges-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
-      gap: 1rem;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 0.75rem;
     }
 
     .badge-card {
       text-align: center;
-      padding: 1rem;
+      padding: 0.75rem 0.5rem;
       border: 1px solid var(--border);
       border-radius: var(--radius);
       background: var(--bg);
+    }
+
+    .badge-card.badge-locked {
+      opacity: 0.5;
+      background: #f8fafc;
+    }
+
+    .badge-card.badge-locked .badge-icon {
+      filter: grayscale(1);
     }
 
     .badge-icon { font-size: 2rem; margin-bottom: 0.5rem; }
@@ -701,24 +753,29 @@
       <div id="view-profile" class="hidden">
         <div class="card">
           <div class="stats-row" id="profile-stats"></div>
-          <div class="profile-section">
-            <h3>Change Password</h3>
-            <div class="form-group">
-              <label for="profile-cp-current">Current password</label>
-              <input type="password" id="profile-cp-current" placeholder="Your current password">
-            </div>
-            <div class="form-group">
-              <label for="profile-cp-new">New password</label>
-              <input type="password" id="profile-cp-new" placeholder="At least 6 characters">
-            </div>
-            <div class="form-group">
-              <label for="profile-cp-confirm">Confirm new password</label>
-              <input type="password" id="profile-cp-confirm" placeholder="Re-enter new password">
-            </div>
-            <button class="btn btn-outline" id="btn-profile-change-password">Update Password</button>
+          <div class="profile-badges-header">
+            <h3>Your Badges</h3>
+            <span class="badge-count" id="badge-count"></span>
           </div>
-          <h3 style="margin-bottom:1rem;margin-top:1.5rem;">Your Badges</h3>
           <div class="badges-grid" id="badges-grid"></div>
+          <details class="profile-section profile-collapse" id="profile-password-collapse">
+            <summary>Change Password</summary>
+            <div class="profile-collapse-body">
+              <div class="form-group">
+                <label for="profile-cp-current">Current password</label>
+                <input type="password" id="profile-cp-current" placeholder="Your current password">
+              </div>
+              <div class="form-group">
+                <label for="profile-cp-new">New password</label>
+                <input type="password" id="profile-cp-new" placeholder="At least 6 characters">
+              </div>
+              <div class="form-group">
+                <label for="profile-cp-confirm">Confirm new password</label>
+                <input type="password" id="profile-cp-confirm" placeholder="Re-enter new password">
+              </div>
+              <button class="btn btn-outline" id="btn-profile-change-password">Update Password</button>
+            </div>
+          </details>
         </div>
       </div>
     </div>
@@ -1304,8 +1361,10 @@
     // Quiz
     function applyQuizData(quiz) {
       currentQuestionIndex = 0;
-      selectedAnswers = {};
       currentQuiz = quiz;
+      selectedAnswers = quiz.submitted && quiz.answers
+        ? Object.assign({}, quiz.answers)
+        : {};
       if (quiz.language && quiz.language !== getLanguage()) {
         setLanguage(quiz.language);
         syncLanguageSelect();
@@ -1348,8 +1407,10 @@
     }
 
     function bindQuestionOptions(container) {
+      if (currentQuiz && currentQuiz.submitted === true) return;
       container.querySelectorAll('.option').forEach(opt => {
         opt.addEventListener('click', () => {
+          if (currentQuiz && currentQuiz.submitted === true) return;
           const qId = opt.dataset.qid;
           const letter = opt.dataset.letter;
           selectedAnswers[qId] = letter;
@@ -1361,6 +1422,10 @@
     }
 
     function renderActiveQuestion(quiz) {
+      if (quiz.submitted === true) {
+        renderQuiz(quiz);
+        return;
+      }
       const container = document.getElementById('quiz-content');
       const questions = quiz.questions || [];
       const total = questions.length;
@@ -1435,26 +1500,26 @@
         return;
       }
 
-      if (!quiz.submitted) {
-        renderActiveQuestion(quiz);
+      if (quiz.submitted === true) {
+        let html = '<div class="card">';
+        html += renderQuizHeader(quiz);
+        html += '<div class="score-result">';
+        html += '<div class="score-circle"><div class="points">' + quiz.score + '</div><div class="label">points</div></div>';
+        html += '<p style="color:var(--text-muted);">Quiz completed — answers are locked</p>';
+        html += '</div>';
+
+        (quiz.questions || []).forEach((q, idx) => {
+          const userAns = (quiz.answers || {})[String(q.id)] || '';
+          html += renderQuestion(q, idx + 1, true, userAns);
+        });
+
+        html += '</div>';
+        container.innerHTML = html;
+        container.classList.remove('hidden');
         return;
       }
 
-      let html = '<div class="card">';
-      html += renderQuizHeader(quiz);
-      html += '<div class="score-result">';
-      html += '<div class="score-circle"><div class="points">' + quiz.score + '</div><div class="label">points</div></div>';
-      html += '<p style="color:var(--text-muted);">Quiz completed — answers are locked</p>';
-      html += '</div>';
-
-      (quiz.questions || []).forEach((q, idx) => {
-        const userAns = (quiz.answers || {})[String(q.id)] || '';
-        html += renderQuestion(q, idx + 1, true, userAns);
-      });
-
-      html += '</div>';
-      container.innerHTML = html;
-      container.classList.remove('hidden');
+      renderActiveQuestion(quiz);
     }
 
     function normalizeQuestionOptions(options) {
@@ -1532,6 +1597,13 @@
       setLoading(btn, true);
       try {
         const res = await API.call('submit', { token: currentToken, answers: selectedAnswers, language: getLanguage() });
+        const submittedAnswers = Object.assign({}, selectedAnswers);
+        applyQuizData(Object.assign({}, currentQuiz, {
+          submitted: true,
+          score: res.result.score,
+          totalQuestions: res.result.totalQuestions,
+          answers: res.result.answers || submittedAnswers
+        }));
         showAlert('alert-app',
           'Quiz submitted! You scored ' + res.result.score + ' points (' + res.result.percentage + '%)' +
           (res.result.isPerfect ? ' — Perfect score! ⭐' : ''), 'success');
@@ -1583,12 +1655,18 @@
           '<div class="stat-box"><div class="stat-value">' + stats.totalQuizzes + '</div><div class="stat-label">Quizzes Done</div></div>';
 
         const badges = p.badges || [];
+        const earnedCount = badges.filter(b => b.earned).length;
+        document.getElementById('badge-count').textContent =
+          earnedCount + ' of ' + badges.length + ' earned';
+
         if (badges.length === 0) {
           document.getElementById('badges-grid').innerHTML =
             '<p style="color:var(--text-muted);grid-column:1/-1;text-align:center;">Complete quizzes to earn badges!</p>';
         } else {
-          document.getElementById('badges-grid').innerHTML = badges.map(b =>
-            '<div class="badge-card"><div class="badge-icon">' + b.icon + '</div>' +
+          const sorted = badges.slice().sort((a, b) => Number(b.earned) - Number(a.earned));
+          document.getElementById('badges-grid').innerHTML = sorted.map(b =>
+            '<div class="badge-card' + (b.earned ? '' : ' badge-locked') + '">' +
+            '<div class="badge-icon">' + b.icon + '</div>' +
             '<div class="badge-name">' + escapeHtml(b.name) + '</div>' +
             '<div class="badge-desc">' + escapeHtml(b.description) + '</div></div>'
           ).join('');

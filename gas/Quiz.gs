@@ -390,25 +390,35 @@ function getQuestionsForReview_(quizId, language) {
 
 function getSubmission_(email, date) {
   var data = getSheetData_(CONFIG.SHEETS.SUBMISSIONS);
+  email = (email || '').toLowerCase();
+  var targetDate = normalizeSheetDate_(date);
+  var found = null;
 
   for (var i = 1; i < data.length; i++) {
-    var rowDate = data[i][1];
-    var dateStr = rowDate instanceof Date
-      ? Utilities.formatDate(rowDate, CONFIG.TIMEZONE, 'yyyy-MM-dd')
-      : String(rowDate).substring(0, 10);
-
-    if ((data[i][0] || '').toLowerCase() === email.toLowerCase() && dateStr === date) {
-      return {
-        row: i + 1,
-        score: Number(data[i][3]) || 0,
-        totalQuestions: Number(data[i][4]) || 0,
-        answers: JSON.parse(data[i][2] || '{}'),
-        submittedAt: data[i][5],
-        locked: data[i][6] === true || data[i][6] === 'TRUE'
-      };
+    if ((data[i][0] || '').toLowerCase() !== email) {
+      continue;
     }
+    if (normalizeSheetDate_(data[i][1]) !== targetDate) {
+      continue;
+    }
+
+    var answers = {};
+    try {
+      answers = JSON.parse(data[i][2] || '{}');
+    } catch (err) {
+      answers = {};
+    }
+
+    found = {
+      row: i + 1,
+      score: Number(data[i][3]) || 0,
+      totalQuestions: Number(data[i][4]) || 0,
+      answers: answers,
+      submittedAt: data[i][5],
+      locked: isSheetTruthy_(data[i][6])
+    };
   }
-  return null;
+  return found;
 }
 
 function submitQuiz_(user, answers, language) {
@@ -452,22 +462,29 @@ function submitQuiz_(user, answers, language) {
     throw new Error('Please answer all ' + totalQuestions + ' questions before submitting.');
   }
 
-  var pointsPerQuestion = 10;
-  var totalPoints = score * pointsPerQuestion;
+  var totalPoints = score * (CONFIG.POINTS_PER_CORRECT || 1);
   var isPerfect = score === totalQuestions && totalQuestions > 0;
 
   // Save submission (locked = true, immutable)
   var subSheet = getSheet_(CONFIG.SHEETS.SUBMISSIONS);
-  subSheet.appendRow([
+  var submissionRow = [
     user.email,
     today,
     JSON.stringify(answerMap),
     totalPoints,
     totalQuestions,
     new Date(),
-    true  // locked
-  ]);
+    true
+  ];
+
+  if (existing) {
+    subSheet.getRange(existing.row, 1, 1, 7).setValues([submissionRow]);
+  } else {
+    subSheet.appendRow(submissionRow);
+  }
+
   invalidateSheetCache_(CONFIG.SHEETS.SUBMISSIONS);
+  invalidateQuestionCacheForQuiz_(quizId);
 
   // Update user stats
   updateUserStats_(user, totalPoints, isPerfect, today);
@@ -477,8 +494,22 @@ function submitQuiz_(user, answers, language) {
     correct: score,
     totalQuestions: totalQuestions,
     percentage: totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0,
-    isPerfect: isPerfect
+    isPerfect: isPerfect,
+    answers: answerMap,
+    submitted: true
   };
+}
+
+function invalidateQuestionCacheForQuiz_(quizId) {
+  if (!quizId) return;
+  var cache = CacheService.getScriptCache();
+  for (var lang in CONFIG.LANGUAGES) {
+    if (!CONFIG.LANGUAGES.hasOwnProperty(lang)) continue;
+    cache.remove('qq:' + lang + ':' + quizId + ':q');
+    cache.remove('qq:' + lang + ':' + quizId + ':a');
+    cache.remove('fq:' + lang + ':' + quizId + ':q');
+    cache.remove('fq:' + lang + ':' + quizId + ':a');
+  }
 }
 
 function getCorrectAnswers_(quizId, language) {
@@ -520,10 +551,7 @@ function calculateStreak_(email, today) {
 
   for (var i = 1; i < data.length; i++) {
     if ((data[i][0] || '').toLowerCase() === email.toLowerCase()) {
-      var rowDate = data[i][1];
-      var dateStr = rowDate instanceof Date
-        ? Utilities.formatDate(rowDate, CONFIG.TIMEZONE, 'yyyy-MM-dd')
-        : String(rowDate).substring(0, 10);
+      var dateStr = normalizeSheetDate_(data[i][1]);
       dates.push(dateStr);
     }
   }

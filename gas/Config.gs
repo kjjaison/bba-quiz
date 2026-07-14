@@ -42,7 +42,7 @@ var CONFIG = {
   SCHEDULE_START_DATE: '2026-07-08',
 
   // Bump on each release — keep in sync with mobile/lib/config/app_config.dart appVersion
-  APP_VERSION: '2026-07-14.4',
+  APP_VERSION: '2026-07-14.7',
 
   // Quiz question languages (sheet per language, same quiz_id across sheets)
   DEFAULT_LANGUAGE: 'en',
@@ -70,16 +70,34 @@ var CONFIG = {
   // Quiz content: firestore (fast), sheet (legacy), auto (firestore when configured)
   QUIZ_DATA_SOURCE: 'auto',
 
+  // Scoring
+  POINTS_PER_CORRECT: 1,
+
   // Badge definitions (earned automatically based on stats)
   BADGE_RULES: [
     { id: 'first_quiz', name: 'First Steps', icon: '🌱', description: 'Complete your first quiz', check: function(s) { return s.totalQuizzes >= 1; } },
+    { id: 'quizzes_5', name: 'Five Loaves', icon: '🥖', description: 'Complete 5 quizzes', check: function(s) { return s.totalQuizzes >= 5; } },
+    { id: 'quizzes_10', name: 'Daily Bread', icon: '🍞', description: 'Complete 10 quizzes', check: function(s) { return s.totalQuizzes >= 10; } },
+    { id: 'quizzes_25', name: 'Good Soil', icon: '🌿', description: 'Complete 25 quizzes', check: function(s) { return s.totalQuizzes >= 25; } },
+    { id: 'quizzes_50', name: 'Dedicated Disciple', icon: '✝️', description: 'Complete 50 quizzes', check: function(s) { return s.totalQuizzes >= 50; } },
+    { id: 'quizzes_100', name: 'Elder in the Word', icon: '📕', description: 'Complete 100 quizzes', check: function(s) { return s.totalQuizzes >= 100; } },
+    { id: 'streak_3', name: 'On a Roll', icon: '⚡', description: '3-day quiz streak', check: function(s) { return s.streak >= 3; } },
     { id: 'streak_7', name: 'Week Warrior', icon: '🔥', description: '7-day quiz streak', check: function(s) { return s.streak >= 7; } },
+    { id: 'streak_14', name: 'Fortnight Faithful', icon: '🗓️', description: '14-day quiz streak', check: function(s) { return s.streak >= 14; } },
     { id: 'streak_30', name: 'Faithful Scholar', icon: '📖', description: '30-day quiz streak', check: function(s) { return s.streak >= 30; } },
+    { id: 'streak_60', name: 'Steadfast Servant', icon: '💎', description: '60-day quiz streak', check: function(s) { return s.streak >= 60; } },
     { id: 'perfect', name: 'Perfect Score', icon: '⭐', description: 'Score 100% on a quiz', check: function(s) { return s.perfectScores >= 1; } },
+    { id: 'perfect_3', name: 'Hat Trick', icon: '🎯', description: '3 perfect scores', check: function(s) { return s.perfectScores >= 3; } },
     { id: 'perfect_5', name: 'Scripture Master', icon: '👑', description: '5 perfect scores', check: function(s) { return s.perfectScores >= 5; } },
-    { id: 'score_500', name: 'Rising Star', icon: '🌟', description: 'Earn 500 total points', check: function(s) { return s.totalScore >= 500; } },
-    { id: 'score_2000', name: 'Bible Champion', icon: '🏆', description: 'Earn 2000 total points', check: function(s) { return s.totalScore >= 2000; } },
-    { id: 'quizzes_50', name: 'Dedicated Disciple', icon: '✝️', description: 'Complete 50 quizzes', check: function(s) { return s.totalQuizzes >= 50; } }
+    { id: 'perfect_10', name: 'Flawless Ten', icon: '💫', description: '10 perfect scores', check: function(s) { return s.perfectScores >= 10; } },
+    { id: 'score_10', name: 'Point Pioneer', icon: '🌾', description: 'Earn 10 total points', check: function(s) { return s.totalScore >= 10; } },
+    { id: 'score_50', name: 'Rising Star', icon: '🌟', description: 'Earn 50 total points', check: function(s) { return s.totalScore >= 50; } },
+    { id: 'score_100', name: 'Hundredfold', icon: '📈', description: 'Earn 100 total points', check: function(s) { return s.totalScore >= 100; } },
+    { id: 'score_200', name: 'Bible Champion', icon: '🏆', description: 'Earn 200 total points', check: function(s) { return s.totalScore >= 200; } },
+    { id: 'score_500', name: 'Pillar of Truth', icon: '🛡️', description: 'Earn 500 total points', check: function(s) { return s.totalScore >= 500; } },
+    { id: 'rank_10', name: 'Top Ten', icon: '🥇', description: 'Reach top 10 on the scoreboard', check: function(s) { return s.rank > 0 && s.rank <= 10; } },
+    { id: 'rank_3', name: 'Podium Finish', icon: '🏅', description: 'Reach top 3 on the scoreboard', check: function(s) { return s.rank > 0 && s.rank <= 3; } },
+    { id: 'rank_1', name: 'Quiz Champion', icon: '👑', description: 'Reach #1 on the scoreboard', check: function(s) { return s.rank === 1; } }
   ]
 };
 
@@ -142,6 +160,49 @@ function showMessage_(message) {
 
 function todayDate_() {
   return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+}
+
+/** Normalize sheet date cells to yyyy-MM-dd for reliable comparisons. */
+function normalizeSheetDate_(value) {
+  if (value === null || value === undefined || value === '') {
+    return '';
+  }
+  if (value instanceof Date) {
+    return Utilities.formatDate(value, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  }
+
+  var str = String(value).trim();
+  if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
+    return str.substring(0, 10);
+  }
+
+  var dmy = str.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if (dmy) {
+    var day = Number(dmy[1]);
+    var month = Number(dmy[2]);
+    var year = Number(dmy[3]);
+    if (day > 12) {
+      return Utilities.formatDate(new Date(year, month - 1, day), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    }
+    if (month > 12) {
+      return Utilities.formatDate(new Date(year, day - 1, month), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    }
+    return Utilities.formatDate(new Date(year, month - 1, day), CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  }
+
+  try {
+    var parsed = new Date(str);
+    if (!isNaN(parsed.getTime())) {
+      return Utilities.formatDate(parsed, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+    }
+  } catch (e) {}
+
+  return str.substring(0, 10);
+}
+
+function isSheetTruthy_(value) {
+  return value === true || value === 1 || value === '1' ||
+    String(value).toUpperCase() === 'TRUE';
 }
 
 function jsonResponse_(data, status) {
