@@ -1,4 +1,4 @@
-const APP_VERSION = '2026-07-14.7';
+const APP_VERSION = '2026-07-14.8';
     const VERSION_KEY = 'bba_quiz_app_version';
 
     (function enforceAppVersion() {
@@ -571,10 +571,25 @@ const APP_VERSION = '2026-07-14.7';
     });
 
     // Quiz
+    function isQuizSubmitted(quiz) {
+      return !!(quiz && (quiz.submitted === true || quiz.submitted === 'true'));
+    }
+
+    function mergeSubmittedQuizState(incoming, existing) {
+      if (!isQuizSubmitted(existing)) return incoming;
+      if (isQuizSubmitted(incoming)) return incoming;
+      return Object.assign({}, incoming, {
+        submitted: true,
+        score: existing.score,
+        answers: existing.answers || incoming.answers,
+        totalQuestions: existing.totalQuestions || incoming.totalQuestions
+      });
+    }
+
     function applyQuizData(quiz) {
       currentQuestionIndex = 0;
       currentQuiz = quiz;
-      selectedAnswers = quiz.submitted && quiz.answers
+      selectedAnswers = isQuizSubmitted(quiz) && quiz.answers
         ? Object.assign({}, quiz.answers)
         : {};
       if (quiz.language && quiz.language !== getLanguage()) {
@@ -591,7 +606,7 @@ const APP_VERSION = '2026-07-14.7';
       document.getElementById('quiz-content').classList.add('hidden');
       try {
         const res = await API.call('quiz', { token: currentToken, language: getLanguage() });
-        applyQuizData(res.quiz);
+        applyQuizData(mergeSubmittedQuizState(res.quiz, currentQuiz));
       } catch (err) {
         if (err.message && err.message.includes('Session')) {
           clearSession();
@@ -619,10 +634,10 @@ const APP_VERSION = '2026-07-14.7';
     }
 
     function bindQuestionOptions(container) {
-      if (currentQuiz && currentQuiz.submitted === true) return;
+      if (isQuizSubmitted(currentQuiz)) return;
       container.querySelectorAll('.option').forEach(opt => {
         opt.addEventListener('click', () => {
-          if (currentQuiz && currentQuiz.submitted === true) return;
+          if (isQuizSubmitted(currentQuiz)) return;
           const qId = opt.dataset.qid;
           const letter = opt.dataset.letter;
           selectedAnswers[qId] = letter;
@@ -634,7 +649,7 @@ const APP_VERSION = '2026-07-14.7';
     }
 
     function renderActiveQuestion(quiz) {
-      if (quiz.submitted === true) {
+      if (isQuizSubmitted(quiz)) {
         renderQuiz(quiz);
         return;
       }
@@ -712,7 +727,7 @@ const APP_VERSION = '2026-07-14.7';
         return;
       }
 
-      if (quiz.submitted === true) {
+      if (isQuizSubmitted(quiz)) {
         let html = '<div class="card">';
         html += renderQuizHeader(quiz);
         html += '<div class="score-result">';
@@ -810,16 +825,19 @@ const APP_VERSION = '2026-07-14.7';
       try {
         const res = await API.call('submit', { token: currentToken, answers: selectedAnswers, language: getLanguage() });
         const submittedAnswers = Object.assign({}, selectedAnswers);
-        applyQuizData(Object.assign({}, currentQuiz, {
+        const lockedQuiz = res.result.quiz || Object.assign({}, currentQuiz, {
           submitted: true,
           score: res.result.score,
           totalQuestions: res.result.totalQuestions,
           answers: res.result.answers || submittedAnswers
-        }));
+        });
+        applyQuizData(lockedQuiz);
         showAlert('alert-app',
           'Quiz submitted! You scored ' + res.result.score + ' points (' + res.result.percentage + '%)' +
           (res.result.isPerfect ? ' — Perfect score! ⭐' : ''), 'success');
-        loadQuiz();
+        if (!isQuizSubmitted(res.result.quiz)) {
+          loadQuiz();
+        }
       } catch (err) {
         showAlert('alert-app', err.message || 'Submission failed', 'error');
       }

@@ -42,7 +42,7 @@ var CONFIG = {
   SCHEDULE_START_DATE: '2026-07-08',
 
   // Bump on each release — keep in sync with mobile/lib/config/app_config.dart appVersion
-  APP_VERSION: '2026-07-14.7',
+  APP_VERSION: '2026-07-14.8',
 
   // Quiz question languages (sheet per language, same quiz_id across sheets)
   DEFAULT_LANGUAGE: 'en',
@@ -162,6 +162,12 @@ function todayDate_() {
   return Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyyy-MM-dd');
 }
 
+/** Date object for writing quiz_date cells (avoids locale string mismatches). */
+function todaySheetDate_() {
+  var parts = todayDate_().split('-');
+  return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+}
+
 /** Normalize sheet date cells to yyyy-MM-dd for reliable comparisons. */
 function normalizeSheetDate_(value) {
   if (value === null || value === undefined || value === '') {
@@ -169,6 +175,13 @@ function normalizeSheetDate_(value) {
   }
   if (value instanceof Date) {
     return Utilities.formatDate(value, CONFIG.TIMEZONE, 'yyyy-MM-dd');
+  }
+
+  if (typeof value === 'number' && isFinite(value) && value > 0) {
+    // Google Sheets serial date (days since 1899-12-30)
+    var base = new Date(1899, 11, 30);
+    var serialDate = new Date(base.getTime() + Math.round(value * 86400 * 1000));
+    return Utilities.formatDate(serialDate, CONFIG.TIMEZONE, 'yyyy-MM-dd');
   }
 
   var str = String(value).trim();

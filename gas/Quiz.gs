@@ -389,7 +389,16 @@ function getQuestionsForReview_(quizId, language) {
 }
 
 function getSubmission_(email, date) {
-  var data = getSheetData_(CONFIG.SHEETS.SUBMISSIONS);
+  // Always read fresh — cached submissions caused post-submit quiz to reload unlocked.
+  var sheet = getSheet_(CONFIG.SHEETS.SUBMISSIONS);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) {
+    return null;
+  }
+
+  var numCols = Math.max(sheet.getLastColumn(), 7);
+  var data = sheet.getRange(1, 1, lastRow, numCols).getValues();
+  var display = sheet.getRange(1, 1, lastRow, numCols).getDisplayValues();
   email = (email || '').toLowerCase();
   var targetDate = normalizeSheetDate_(date);
   var found = null;
@@ -398,7 +407,9 @@ function getSubmission_(email, date) {
     if ((data[i][0] || '').toLowerCase() !== email) {
       continue;
     }
-    if (normalizeSheetDate_(data[i][1]) !== targetDate) {
+
+    var rowDate = normalizeSheetDate_(data[i][1]) || normalizeSheetDate_(display[i][1]);
+    if (rowDate !== targetDate) {
       continue;
     }
 
@@ -469,7 +480,7 @@ function submitQuiz_(user, answers, language) {
   var subSheet = getSheet_(CONFIG.SHEETS.SUBMISSIONS);
   var submissionRow = [
     user.email,
-    today,
+    todaySheetDate_(),
     JSON.stringify(answerMap),
     totalPoints,
     totalQuestions,
@@ -489,7 +500,7 @@ function submitQuiz_(user, answers, language) {
   // Update user stats
   updateUserStats_(user, totalPoints, isPerfect, today);
 
-  return {
+  var result = {
     score: totalPoints,
     correct: score,
     totalQuestions: totalQuestions,
@@ -498,6 +509,14 @@ function submitQuiz_(user, answers, language) {
     answers: answerMap,
     submitted: true
   };
+
+  try {
+    result.quiz = getTodayQuiz_(user, lang);
+  } catch (err) {
+    Logger.log('Post-submit quiz load failed: ' + (err.message || err));
+  }
+
+  return result;
 }
 
 function invalidateQuestionCacheForQuiz_(quizId) {
