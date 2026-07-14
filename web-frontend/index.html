@@ -6,11 +6,11 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <meta name="bba-app-version" content="2026-07-14.8" />
+  <meta name="bba-app-version" content="2026-07-14.9" />
   <title>BBA Dublin Bible Quiz</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=2026-07-14.8" />
+  <link rel="stylesheet" href="./styles.css?v=2026-07-14.9" />
 </head>
 <body>
 <div id="embed-help" class="embed-help hidden">
@@ -158,6 +158,14 @@
         </div>
       </div>
 
+      <div id="test-date-row" class="test-date-row hidden">
+        <span class="test-mode-label">Test mode</span>
+        <label for="test-quiz-date">Quiz date</label>
+        <input type="date" id="test-quiz-date" class="test-date-input">
+        <button type="button" class="btn btn-outline btn-sm" id="btn-load-quiz-date">Load quiz</button>
+        <span class="test-date-hint">Pick any scheduled date to test. Disable via Settings → test_date_picker | false before go-live.</span>
+      </div>
+
       <div class="tabs" id="app-tabs">
         <button class="tab active" data-view="quiz">Today's Quiz</button>
         <button class="tab" data-view="leaderboard">Scoreboard</button>
@@ -225,7 +233,7 @@
     "Blessed are those who hear the word of God and keep it." — Luke 11:28
   </footer>
 
-  <script src="./config.js?v=2026-07-14.8"></script>
-  <script src="./app.js?v=2026-07-14.8"></script>
+  <script src="./config.js?v=2026-07-14.9"></script>
+  <script src="./app.js?v=2026-07-14.9"></script>
 </body>
 </html>

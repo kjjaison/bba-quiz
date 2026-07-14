@@ -511,6 +511,52 @@
     .user-info { font-size: 0.9rem; color: var(--text-muted); }
     .user-info strong { color: var(--text); }
 
+    .test-date-row {
+      display: flex;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem 0.75rem;
+      margin-bottom: 1rem;
+      padding: 0.75rem 1rem;
+      background: #fffbeb;
+      border: 1px solid #fcd34d;
+      border-radius: var(--radius);
+    }
+
+    .test-date-row.hidden { display: none; }
+
+    .test-mode-label {
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #b45309;
+      background: #fef3c7;
+      padding: 0.2rem 0.5rem;
+      border-radius: 999px;
+    }
+
+    .test-date-row label {
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    .test-date-input {
+      padding: 0.4rem 0.6rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      background: white;
+      color: var(--text);
+    }
+
+    .test-date-hint {
+      width: 100%;
+      font-size: 0.8rem;
+      color: #92400e;
+    }
+
     .stats-row {
       display: grid;
       grid-template-columns: repeat(3, 1fr);

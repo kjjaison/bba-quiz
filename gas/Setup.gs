@@ -79,7 +79,9 @@ function setupSheets() {
   showMessage_(
     'Setup complete! Sheets created with sample quiz data.\n\n' +
     'DailySchedule refreshed from Questions (' + scheduleCount + ' days, starting ' +
-    CONFIG.SCHEDULE_START_DATE + ').'
+    CONFIG.SCHEDULE_START_DATE + ').\n\n' +
+    'Testing: add Settings row test_date_picker | true to enable date picker.\n' +
+    'Go live: set test_date_picker | false (or remove the row).'
   );
 }
 

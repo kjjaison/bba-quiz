@@ -1,4 +1,4 @@
-const APP_VERSION = '2026-07-14.8';
+const APP_VERSION = '2026-07-14.9';
     const VERSION_KEY = 'bba_quiz_app_version';
 
     (function enforceAppVersion() {
@@ -64,6 +64,79 @@ const APP_VERSION = '2026-07-14.8';
     const SESSION_TOKEN_KEY = 'bba_quiz_session_token';
     const SESSION_USER_KEY = 'bba_quiz_session_user';
     const LANG_KEY = 'bba_quiz_language';
+    const TEST_DATE_KEY = 'bba_quiz_test_date';
+
+    let testDatePickerEnabled = false;
+
+    function getStoredTestDate() {
+      try {
+        return localStorage.getItem(TEST_DATE_KEY) || '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function setStoredTestDate(value) {
+      try {
+        if (value) localStorage.setItem(TEST_DATE_KEY, value);
+        else localStorage.removeItem(TEST_DATE_KEY);
+      } catch (e) { /* ignore */ }
+    }
+
+    function todayIsoDate() {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      return y + '-' + m + '-' + d;
+    }
+
+    function syncTestDatePickerUi(enabled) {
+      testDatePickerEnabled = enabled === true;
+      const row = document.getElementById('test-date-row');
+      if (!row) return;
+      row.classList.toggle('hidden', !testDatePickerEnabled);
+      if (!testDatePickerEnabled) return;
+
+      const input = document.getElementById('test-quiz-date');
+      const stored = getStoredTestDate();
+      if (input && stored) input.value = stored;
+      else if (input && !input.value) input.value = todayIsoDate();
+    }
+
+    function getQuizDateParam() {
+      if (!testDatePickerEnabled) return undefined;
+      const input = document.getElementById('test-quiz-date');
+      const value = (input && input.value) || getStoredTestDate();
+      return value || undefined;
+    }
+
+    function buildQuizRequestParams(extra) {
+      const params = Object.assign({}, extra || {});
+      const quizDate = getQuizDateParam();
+      if (quizDate) params.quizDate = quizDate;
+      return params;
+    }
+
+    async function loadAppConfig() {
+      try {
+        const res = await API.call('ping', {});
+        syncTestDatePickerUi(res.testDatePicker === true);
+      } catch (err) {
+        syncTestDatePickerUi(false);
+      }
+    }
+
+    function applyQuizConfigFromResponse(payload) {
+      if (payload && payload.testDatePicker === true) {
+        syncTestDatePickerUi(true);
+      }
+      if (payload && payload.date && testDatePickerEnabled) {
+        const input = document.getElementById('test-quiz-date');
+        if (input) input.value = payload.date;
+        setStoredTestDate(payload.date);
+      }
+    }
 
     function getLanguage() {
       try {
@@ -189,6 +262,7 @@ const APP_VERSION = '2026-07-14.8';
               requestOtp: 'apiRequestOtp',
               forgotPassword: 'apiForgotPassword',
               loginOtp: 'apiLoginOtp',
+              ping: 'apiPing',
               quiz: 'apiGetQuiz',
               submit: 'apiSubmitQuiz',
               leaderboard: 'apiLeaderboard',
@@ -201,8 +275,9 @@ const APP_VERSION = '2026-07-14.8';
               : action === 'requestOtp' ? [params.email]
               : action === 'forgotPassword' ? [params.email]
               : action === 'loginOtp' ? [params.email, params.otp, params.rememberMe, params.language]
-              : action === 'quiz' ? [params.token, params.language]
-              : action === 'submit' ? [params.token, params.answers, params.language]
+              : action === 'ping' ? []
+              : action === 'quiz' ? [params.token, params.language, params.quizDate]
+              : action === 'submit' ? [params.token, params.answers, params.language, params.quizDate]
               : action === 'changePassword' ? [params.token, params.currentPassword, params.newPassword]
               : action === 'leaderboard' ? [params.token, params.period]
               : action === 'profile' ? [params.token]
@@ -564,6 +639,18 @@ const APP_VERSION = '2026-07-14.8';
       }
     });
 
+    document.getElementById('btn-load-quiz-date').addEventListener('click', () => {
+      const input = document.getElementById('test-quiz-date');
+      if (input && input.value) setStoredTestDate(input.value);
+      if (!document.getElementById('app-screen').classList.contains('hidden')) {
+        loadQuiz();
+      }
+    });
+
+    document.getElementById('test-quiz-date').addEventListener('change', e => {
+      if (e.target.value) setStoredTestDate(e.target.value);
+    });
+
     document.getElementById('btn-reset-cache').addEventListener('click', e => {
       e.preventDefault();
       clearSession();
@@ -587,6 +674,7 @@ const APP_VERSION = '2026-07-14.8';
     }
 
     function applyQuizData(quiz) {
+      applyQuizConfigFromResponse(quiz);
       currentQuestionIndex = 0;
       currentQuiz = quiz;
       selectedAnswers = isQuizSubmitted(quiz) && quiz.answers
@@ -605,7 +693,7 @@ const APP_VERSION = '2026-07-14.8';
       document.getElementById('quiz-loading').classList.remove('hidden');
       document.getElementById('quiz-content').classList.add('hidden');
       try {
-        const res = await API.call('quiz', { token: currentToken, language: getLanguage() });
+        const res = await API.call('quiz', buildQuizRequestParams({ token: currentToken, language: getLanguage() }));
         applyQuizData(mergeSubmittedQuizState(res.quiz, currentQuiz));
       } catch (err) {
         if (err.message && err.message.includes('Session')) {
@@ -823,7 +911,11 @@ const APP_VERSION = '2026-07-14.8';
       const btn = document.getElementById('btn-submit-quiz');
       setLoading(btn, true);
       try {
-        const res = await API.call('submit', { token: currentToken, answers: selectedAnswers, language: getLanguage() });
+        const res = await API.call('submit', buildQuizRequestParams({
+          token: currentToken,
+          answers: selectedAnswers,
+          language: getLanguage()
+        }));
         const submittedAnswers = Object.assign({}, selectedAnswers);
         const lockedQuiz = res.result.quiz || Object.assign({}, currentQuiz, {
           submitted: true,
@@ -916,11 +1008,13 @@ const APP_VERSION = '2026-07-14.8';
     function initApp() {
       try {
         syncRememberCheckboxes();
-        if (currentToken && currentUser) {
-          showApp();
-        } else {
-          showAuth();
-        }
+        loadAppConfig().finally(() => {
+          if (currentToken && currentUser) {
+            showApp();
+          } else {
+            showAuth();
+          }
+        });
       } catch (err) {
         showAuth();
         showAlert('alert-auth', err.message || 'Could not start app', 'error');

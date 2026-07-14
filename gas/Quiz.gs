@@ -211,10 +211,7 @@ function getScheduleForDate_(today) {
 
   var schedule = getSheetData_(CONFIG.SHEETS.SCHEDULE);
   for (var i = 1; i < schedule.length; i++) {
-    var rowDate = schedule[i][0];
-    var dateStr = rowDate instanceof Date
-      ? Utilities.formatDate(rowDate, CONFIG.TIMEZONE, 'yyyy-MM-dd')
-      : String(rowDate).substring(0, 10);
+    var dateStr = normalizeSheetDate_(schedule[i][0]);
 
     if (dateStr === today) {
       return {
@@ -249,16 +246,21 @@ function validateQuizReady_(quizId, book, chapter, language) {
   return count;
 }
 
-function getTodayQuiz_(user, language) {
+function getTodayQuiz_(user, language, requestedDate) {
   var lang = normalizeLanguage_(language);
   var today = todayDate_();
-  var scheduleEntry = getScheduleForDate_(today);
+  var quizDate = resolveQuizDate_(requestedDate);
+  var scheduleEntry = getScheduleForDate_(quizDate);
 
   if (!scheduleEntry || !scheduleEntry.quizId) {
     return {
-      date: today,
+      date: quizDate,
       available: false,
-      message: 'No quiz scheduled for today. Check back tomorrow!'
+      testDatePicker: isTestDatePickerEnabled_(),
+      isTestDate: quizDate !== today,
+      message: quizDate === today
+        ? 'No quiz scheduled for today. Check back tomorrow!'
+        : 'No quiz scheduled for ' + quizDate + '.'
     };
   }
 
@@ -267,7 +269,7 @@ function getTodayQuiz_(user, language) {
   var chapter = scheduleEntry.chapter;
   var dataSource = scheduleEntry.source;
 
-  var submission = getSubmission_(user.email, today);
+  var submission = getSubmission_(user.email, quizDate);
   var includeAnswers = !!submission;
   var questions = loadQuestionsForQuiz_(quizId, lang, includeAnswers);
   var questionCount = questions.length;
@@ -276,13 +278,15 @@ function getTodayQuiz_(user, language) {
   if (questionCount < minRequired) {
     var label = (book && chapter) ? book + ' ' + chapter : quizId;
     return {
-      date: today,
+      date: quizDate,
       available: false,
       quizId: quizId,
       book: book,
       chapter: chapter,
       language: lang,
       dataSource: dataSource,
+      testDatePicker: isTestDatePickerEnabled_(),
+      isTestDate: quizDate !== today,
       message:
         'Today\'s quiz (' + label + ') is not ready yet. ' +
         'It needs at least ' + minRequired + ' questions but only has ' + questionCount + '. ' +
@@ -296,7 +300,7 @@ function getTodayQuiz_(user, language) {
 
   if (submission) {
     return {
-      date: today,
+      date: quizDate,
       available: true,
       quizId: quizId,
       book: book,
@@ -304,6 +308,8 @@ function getTodayQuiz_(user, language) {
       title: title,
       language: lang,
       dataSource: dataSource,
+      testDatePicker: isTestDatePickerEnabled_(),
+      isTestDate: quizDate !== today,
       questionCount: submission.totalQuestions,
       submitted: true,
       score: submission.score,
@@ -314,7 +320,7 @@ function getTodayQuiz_(user, language) {
   }
 
   return {
-    date: today,
+    date: quizDate,
     available: true,
     quizId: quizId,
     book: book,
@@ -322,6 +328,8 @@ function getTodayQuiz_(user, language) {
     title: title,
     language: lang,
     dataSource: dataSource,
+    testDatePicker: isTestDatePickerEnabled_(),
+    isTestDate: quizDate !== today,
     questionCount: questionCount,
     submitted: false,
     questions: questions
@@ -432,21 +440,24 @@ function getSubmission_(email, date) {
   return found;
 }
 
-function submitQuiz_(user, answers, language) {
+function submitQuiz_(user, answers, language, requestedDate) {
   var lang = normalizeLanguage_(language);
   var today = todayDate_();
+  var quizDate = resolveQuizDate_(requestedDate);
 
   // Block re-submission
-  var existing = getSubmission_(user.email, today);
+  var existing = getSubmission_(user.email, quizDate);
   if (existing && existing.locked) {
-    throw new Error('You have already submitted today\'s quiz. Answers cannot be changed.');
+    throw new Error('You have already submitted this quiz. Answers cannot be changed.');
   }
 
-  var scheduleEntry = getScheduleForDate_(today);
+  var scheduleEntry = getScheduleForDate_(quizDate);
   var quizId = scheduleEntry ? scheduleEntry.quizId : null;
 
   if (!quizId) {
-    throw new Error('No quiz available for today');
+    throw new Error(quizDate === today
+      ? 'No quiz available for today'
+      : 'No quiz available for ' + quizDate);
   }
 
   validateQuizReady_(quizId, null, null, lang);
@@ -480,7 +491,7 @@ function submitQuiz_(user, answers, language) {
   var subSheet = getSheet_(CONFIG.SHEETS.SUBMISSIONS);
   var submissionRow = [
     user.email,
-    todaySheetDate_(),
+    sheetDateFromYmd_(quizDate),
     JSON.stringify(answerMap),
     totalPoints,
     totalQuestions,
@@ -498,7 +509,7 @@ function submitQuiz_(user, answers, language) {
   invalidateQuestionCacheForQuiz_(quizId);
 
   // Update user stats
-  updateUserStats_(user, totalPoints, isPerfect, today);
+  updateUserStats_(user, totalPoints, isPerfect, quizDate);
 
   var result = {
     score: totalPoints,
@@ -507,11 +518,12 @@ function submitQuiz_(user, answers, language) {
     percentage: totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0,
     isPerfect: isPerfect,
     answers: answerMap,
-    submitted: true
+    submitted: true,
+    quizDate: quizDate
   };
 
   try {
-    result.quiz = getTodayQuiz_(user, lang);
+    result.quiz = getTodayQuiz_(user, lang, quizDate);
   } catch (err) {
     Logger.log('Post-submit quiz load failed: ' + (err.message || err));
   }

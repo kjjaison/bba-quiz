@@ -36,14 +36,24 @@ function apiLoginOtp(email, otp, rememberMe, language) {
   return response;
 }
 
-function apiGetQuiz(token, language) {
-  var user = validateSession_(token);
-  return { success: true, quiz: getTodayQuiz_(user, language) };
+function apiPing() {
+  var appConfig = getAppPublicConfig_();
+  return {
+    success: true,
+    version: appConfig.version,
+    testDatePicker: appConfig.testDatePicker,
+    time: new Date().toISOString()
+  };
 }
 
-function apiSubmitQuiz(token, answers, language) {
+function apiGetQuiz(token, language, quizDate) {
   var user = validateSession_(token);
-  return { success: true, result: submitQuiz_(user, answers, language) };
+  return { success: true, quiz: getTodayQuiz_(user, language, quizDate) };
+}
+
+function apiSubmitQuiz(token, answers, language, quizDate) {
+  var user = validateSession_(token);
+  return { success: true, result: submitQuiz_(user, answers, language, quizDate) };
 }
 
 function apiLeaderboard(token, period) {

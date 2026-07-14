@@ -62,10 +62,10 @@ function normalizeApiParams_(params) {
   return result;
 }
 
-function authResponseWithQuiz_(user, language) {
+function authResponseWithQuiz_(user, language, quizDate) {
   var response = { user: user };
   try {
-    response.quiz = getTodayQuiz_(userFromLoginResult_(user), language);
+    response.quiz = getTodayQuiz_(userFromLoginResult_(user), language, quizDate);
   } catch (err) {
     Logger.log('Quiz prefetch failed: ' + (err.message || err));
   }
@@ -117,13 +117,13 @@ function handleApi_(e) {
       case 'quiz':
         var quizUser = validateSession_(token);
         return successResponse_({
-          quiz: getTodayQuiz_(quizUser, params.language)
+          quiz: getTodayQuiz_(quizUser, params.language, params.quizDate)
         });
 
       case 'submit':
         var submitUser = validateSession_(token);
         return successResponse_({
-          result: submitQuiz_(submitUser, params.answers || {}, params.language)
+          result: submitQuiz_(submitUser, params.answers || {}, params.language, params.quizDate)
         });
 
       case 'leaderboard':
@@ -145,8 +145,10 @@ function handleApi_(e) {
         });
 
       case 'ping':
+        var appConfig = getAppPublicConfig_();
         return successResponse_({
-          version: CONFIG.APP_VERSION,
+          version: appConfig.version,
+          testDatePicker: appConfig.testDatePicker,
           time: new Date().toISOString()
         });
 

@@ -42,7 +42,7 @@ var CONFIG = {
   SCHEDULE_START_DATE: '2026-07-08',
 
   // Bump on each release — keep in sync with mobile/lib/config/app_config.dart appVersion
-  APP_VERSION: '2026-07-14.8',
+  APP_VERSION: '2026-07-14.9',
 
   // Quiz question languages (sheet per language, same quiz_id across sheets)
   DEFAULT_LANGUAGE: 'en',
@@ -72,6 +72,9 @@ var CONFIG = {
 
   // Scoring
   POINTS_PER_CORRECT: 1,
+
+  // Testing: allow picking quiz date in UI. Override via Settings → test_date_picker | true/false
+  TEST_DATE_PICKER: false,
 
   // Badge definitions (earned automatically based on stats)
   BADGE_RULES: [
@@ -216,6 +219,45 @@ function normalizeSheetDate_(value) {
 function isSheetTruthy_(value) {
   return value === true || value === 1 || value === '1' ||
     String(value).toUpperCase() === 'TRUE';
+}
+
+/** When true, clients may pass quizDate to load/submit quizzes for other days (testing only). */
+function isTestDatePickerEnabled_() {
+  var fromSettings = String(getSetting_('test_date_picker') || '').toLowerCase();
+  if (fromSettings === 'true' || fromSettings === '1' || fromSettings === 'yes') {
+    return true;
+  }
+  if (fromSettings === 'false' || fromSettings === '0' || fromSettings === 'no') {
+    return false;
+  }
+  return CONFIG.TEST_DATE_PICKER === true;
+}
+
+function resolveQuizDate_(requestedDate) {
+  var today = todayDate_();
+  if (!isTestDatePickerEnabled_()) {
+    return today;
+  }
+  var normalized = normalizeSheetDate_(requestedDate);
+  if (!normalized || !/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+    return today;
+  }
+  return normalized;
+}
+
+function sheetDateFromYmd_(ymd) {
+  var parts = String(ymd || '').substring(0, 10).split('-');
+  if (parts.length !== 3) {
+    return todaySheetDate_();
+  }
+  return new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+}
+
+function getAppPublicConfig_() {
+  return {
+    version: CONFIG.APP_VERSION,
+    testDatePicker: isTestDatePickerEnabled_()
+  };
 }
 
 function jsonResponse_(data, status) {
