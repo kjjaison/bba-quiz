@@ -42,7 +42,7 @@ var CONFIG = {
   SCHEDULE_START_DATE: '2026-07-08',
 
   // Bump on each release — keep in sync with mobile/lib/config/app_config.dart appVersion
-  APP_VERSION: '2026-07-10.3',
+  APP_VERSION: '2026-07-14.4',
 
   // Quiz question languages (sheet per language, same quiz_id across sheets)
   DEFAULT_LANGUAGE: 'en',
@@ -53,6 +53,22 @@ var CONFIG = {
 
   // Password salt prefix (change this to a random string in production)
   SALT: 'bba-quiz-2026',
+
+  // Quiz email: send from deployer (bba@), replies go to quizmaster@
+  QUIZ_FROM_EMAIL: 'bba@bbadublin.com',
+  QUIZ_REPLY_EMAIL: 'quizmaster@bbadublin.com',
+  QUIZ_EMAIL_NAME: 'BBA Dublin Bible Quiz',
+
+  // Hybrid Firestore sync (Spark: Apps Script direct; Blaze: optional Cloud Function URL)
+  FIREBASE_PROJECT_ID: 'bbadublin-quiz',
+  // user = your Google account OAuth (use when org blocks service account keys)
+  // service_account = FIREBASE_CLIENT_EMAIL + FIREBASE_PRIVATE_KEY in Script properties
+  FIRESTORE_AUTH_MODE: 'user',
+  FIRESTORE_SYNC_URL: '',
+  SYNC_SECRET: '',
+
+  // Quiz content: firestore (fast), sheet (legacy), auto (firestore when configured)
+  QUIZ_DATA_SOURCE: 'auto',
 
   // Badge definitions (earned automatically based on stats)
   BADGE_RULES: [

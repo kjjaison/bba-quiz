@@ -105,6 +105,9 @@ function handleApi_(e) {
       case 'requestOtp':
         return successResponse_(requestOTP_(params.email));
 
+      case 'forgotPassword':
+        return successResponse_(requestPasswordReset_(params.email));
+
       case 'loginOtp':
         return successResponse_(authResponseWithQuiz_(
           loginWithOTP_(params.email, params.otp, params.rememberMe),
@@ -127,6 +130,12 @@ function handleApi_(e) {
         validateSession_(token);
         return successResponse_({
           leaderboard: getLeaderboard_(params.period || 'all')
+        });
+
+      case 'changePassword':
+        var changeUser = validateSession_(token);
+        return successResponse_({
+          result: changePassword_(changeUser, params.currentPassword, params.newPassword)
         });
 
       case 'profile':

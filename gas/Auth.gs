@@ -18,6 +18,236 @@ function hashPassword_(password) {
   }).join('');
 }
 
+function getQuizFromEmail_() {
+  return String(CONFIG.QUIZ_FROM_EMAIL || 'bba@bbadublin.com').trim();
+}
+
+function getQuizReplyEmail_() {
+  return String(CONFIG.QUIZ_REPLY_EMAIL || CONFIG.QUIZ_MASTER_EMAIL || 'quizmaster@bbadublin.com').trim();
+}
+
+/** Contact / reply address shown in email footers */
+function getQuizMasterEmail_() {
+  return getQuizReplyEmail_();
+}
+
+function getScriptRunnerEmail_() {
+  try {
+    return Session.getEffectiveUser().getEmail() || '';
+  } catch (e) {
+    return '';
+  }
+}
+
+function sendQuizEmail_(options) {
+  var senderName = CONFIG.QUIZ_EMAIL_NAME || 'BBA Dublin Bible Quiz';
+  var replyTo = getQuizReplyEmail_();
+
+  MailApp.sendEmail({
+    to: options.to,
+    subject: options.subject,
+    htmlBody: options.htmlBody,
+    name: senderName,
+    replyTo: replyTo
+  });
+}
+
+/** Re-authorize email sending (MailApp uses the deployer account). */
+function authorizeQuizEmailAccess() {
+  try {
+    var runner = getScriptRunnerEmail_();
+    showMessage_(
+      'Email is ready.\n\n' +
+      'Sends from: ' + (runner || getQuizFromEmail_()) + '\n' +
+      'Reply-To: ' + getQuizReplyEmail_() + '\n\n' +
+      'Use “Test quiz email” to confirm.'
+    );
+  } catch (err) {
+    showMessage_('Email check failed:\n\n' + (err.message || err));
+  }
+}
+
+function generateTempPassword_() {
+  var chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+  var length = 10;
+  var result = '';
+  for (var i = 0; i < length; i++) {
+    result += chars.charAt(Math.floor(Math.random() * chars.length));
+  }
+  return result;
+}
+
+function invalidateAllSessionsForUser_(email) {
+  email = (email || '').toLowerCase().trim();
+  var sheet = getSessionsSheet_();
+  var data = getSheetData_(CONFIG.SHEETS.SESSIONS);
+  var rowsToDelete = [];
+
+  for (var i = data.length - 1; i >= 1; i--) {
+    if ((data[i][SESSION_COL.EMAIL] || '').toLowerCase() === email) {
+      rowsToDelete.push(i + 1);
+    }
+  }
+
+  for (var j = 0; j < rowsToDelete.length; j++) {
+    sheet.deleteRow(rowsToDelete[j]);
+  }
+  if (rowsToDelete.length) {
+    invalidateSheetCache_(CONFIG.SHEETS.SESSIONS);
+  }
+}
+
+var USER_COL = {
+  EMAIL: 0,
+  PASSWORD_HASH: 1,
+  DISPLAY_NAME: 2,
+  CREATED: 3,
+  LEGACY_SESSION_TOKEN: 4,
+  LEGACY_SESSION_EXPIRES: 5,
+  TOTAL_SCORE: 6,
+  TOTAL_QUIZZES: 7,
+  PERFECT_SCORES: 8,
+  STREAK: 9,
+  MUST_CHANGE_PASSWORD: 10
+};
+
+function userMustChangePassword_(row) {
+  var val = row[USER_COL.MUST_CHANGE_PASSWORD];
+  return val === true || val === 'TRUE' || val === 'true' || val === 1 || val === '1';
+}
+
+function setMustChangePassword_(email, mustChange) {
+  email = (email || '').toLowerCase().trim();
+  var sheet = getSheet_(CONFIG.SHEETS.USERS);
+  var data = getSheetData_(CONFIG.SHEETS.USERS);
+
+  for (var i = 1; i < data.length; i++) {
+    if ((data[i][0] || '').toLowerCase() === email) {
+      sheet.getRange(i + 1, USER_COL.MUST_CHANGE_PASSWORD + 1).setValue(!!mustChange);
+      invalidateSheetCache_(CONFIG.SHEETS.USERS);
+      return;
+    }
+  }
+}
+
+function updateUserPassword_(email, newPassword, invalidateSessions) {
+  email = (email || '').toLowerCase().trim();
+  var sheet = getSheet_(CONFIG.SHEETS.USERS);
+  var data = getSheetData_(CONFIG.SHEETS.USERS);
+  var hash = hashPassword_(newPassword);
+
+  for (var i = 1; i < data.length; i++) {
+    if ((data[i][0] || '').toLowerCase() === email) {
+      sheet.getRange(i + 1, USER_COL.PASSWORD_HASH + 1).setValue(hash);
+      invalidateSheetCache_(CONFIG.SHEETS.USERS);
+      if (invalidateSessions !== false) {
+        invalidateAllSessionsForUser_(email);
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
+function changePassword_(user, currentPassword, newPassword) {
+  currentPassword = String(currentPassword || '');
+  newPassword = String(newPassword || '');
+
+  if (!currentPassword || !newPassword) {
+    throw new Error('Current and new password are required');
+  }
+  if (newPassword.length < 6) {
+    throw new Error('New password must be at least 6 characters');
+  }
+  if (currentPassword === newPassword) {
+    throw new Error('New password must be different from your current password');
+  }
+
+  var sheet = getSheet_(CONFIG.SHEETS.USERS);
+  var data = getSheetData_(CONFIG.SHEETS.USERS);
+  var email = (user.email || '').toLowerCase();
+
+  for (var i = 1; i < data.length; i++) {
+    if ((data[i][0] || '').toLowerCase() === email) {
+      if (data[i][USER_COL.PASSWORD_HASH] !== hashPassword_(currentPassword)) {
+        throw new Error('Current password is incorrect');
+      }
+      sheet.getRange(i + 1, USER_COL.PASSWORD_HASH + 1).setValue(hashPassword_(newPassword));
+      setMustChangePassword_(email, false);
+      return { message: 'Password updated successfully', mustChangePassword: false };
+    }
+  }
+  throw new Error('User not found');
+}
+
+function requestPasswordReset_(email) {
+  email = (email || '').toLowerCase().trim();
+  if (!email) {
+    throw new Error('Email is required');
+  }
+
+  var users = getSheetData_(CONFIG.SHEETS.USERS);
+  var userRow = null;
+  for (var i = 1; i < users.length; i++) {
+    if ((users[i][0] || '').toLowerCase() === email) {
+      userRow = users[i];
+      break;
+    }
+  }
+
+  if (!userRow) {
+    throw new Error('No account found with this email. Please register first.');
+  }
+
+  var tempPassword = generateTempPassword_();
+  updateUserPassword_(email, tempPassword, true);
+  setMustChangePassword_(email, true);
+
+  var displayName = userRow[2] || 'there';
+  sendQuizEmail_({
+    to: email,
+    subject: 'BBA Dublin Bible Quiz - Your Password Reset',
+    htmlBody: '<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;">' +
+      '<h2 style="color:#1a365d;">BBA Dublin Bible Quiz</h2>' +
+      '<p>Hi ' + displayName + ',</p>' +
+      '<p>We received a request to reset your quiz password. Your new temporary password is:</p>' +
+      '<p style="font-size:24px;font-weight:bold;letter-spacing:2px;color:#2b6cb0;">' + tempPassword + '</p>' +
+      '<p style="color:#718096;">Sign in with this password — you will be asked to set a new password right away.</p>' +
+      '<p style="color:#a0aec0;font-size:12px;">If you did not request this, contact ' +
+      getQuizMasterEmail_() + ' immediately.</p>' +
+      '</div>'
+  });
+
+  return { message: 'A new password has been sent to your email.' };
+}
+
+/** Run from Sheet menu to verify quiz email From / Reply-To */
+function testQuizEmailSend() {
+  try {
+    var to = Session.getActiveUser().getEmail();
+    if (!to) {
+      showMessage_('Could not detect your email. Open the Sheet and run this from the BBA Quiz menu.');
+      return;
+    }
+    var runner = getScriptRunnerEmail_();
+    sendQuizEmail_({
+      to: to,
+      subject: 'BBA Dublin Bible Quiz - Email Test',
+      htmlBody: '<div style="font-family:sans-serif;padding:16px;">' +
+        '<p>Quiz emails send from <b>' + (runner || getQuizFromEmail_()) + '</b>.</p>' +
+        '<p>Replies go to <b>' + getQuizReplyEmail_() + '</b>.</p>' +
+        '</div>'
+    });
+    showMessage_(
+      'Test email sent to ' + to + '\n\n' +
+      'From: ' + (runner || getQuizFromEmail_()) + '\n' +
+      'Reply-To: ' + getQuizReplyEmail_()
+    );
+  } catch (err) {
+    showMessage_('Email test failed:\n\n' + (err.message || err));
+  }
+}
+
 function generateToken_() {
   return Utilities.getUuid() + '-' + Utilities.getUuid();
 }
@@ -113,7 +343,8 @@ function getUserProfileByEmail_(email) {
         totalScore: Number(data[i][6]) || 0,
         totalQuizzes: Number(data[i][7]) || 0,
         perfectScores: Number(data[i][8]) || 0,
-        streak: Number(data[i][9]) || 0
+        streak: Number(data[i][9]) || 0,
+        mustChangePassword: userMustChangePassword_(data[i])
       };
     }
   }
@@ -157,11 +388,12 @@ function registerUser_(email, password, displayName, rememberMe) {
     0,
     0,
     0,
-    0
+    0,
+    false
   ]);
   invalidateSheetCache_(CONFIG.SHEETS.USERS);
 
-  return { email: email, displayName: displayName, token: token };
+  return { email: email, displayName: displayName, token: token, mustChangePassword: false };
 }
 
 function loginWithPassword_(email, password, rememberMe) {
@@ -183,7 +415,8 @@ function loginWithPassword_(email, password, rememberMe) {
       return {
         email: data[i][0],
         displayName: data[i][2],
-        token: token
+        token: token,
+        mustChangePassword: userMustChangePassword_(data[i])
       };
     }
   }
@@ -225,7 +458,7 @@ function requestOTP_(email) {
   otpSheet.appendRow([email, otp, expires]);
   invalidateSheetCache_(CONFIG.SHEETS.OTP);
 
-  MailApp.sendEmail({
+  sendQuizEmail_({
     to: email,
     subject: 'BBA Dublin Bible Quiz - Your Login Code',
     htmlBody: '<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;">' +
@@ -233,7 +466,8 @@ function requestOTP_(email) {
       '<p>Your one-time login code is:</p>' +
       '<p style="font-size:32px;font-weight:bold;letter-spacing:8px;color:#2b6cb0;">' + otp + '</p>' +
       '<p style="color:#718096;">This code expires in ' + CONFIG.OTP_EXPIRY_MINUTES + ' minutes.</p>' +
-      '<p style="color:#a0aec0;font-size:12px;">If you did not request this code, you can ignore this email.</p>' +
+      '<p style="color:#a0aec0;font-size:12px;">If you did not request this code, contact ' +
+      getQuizMasterEmail_() + '.</p>' +
       '</div>'
   });
 
@@ -276,7 +510,8 @@ function loginWithOTP_(email, otp, rememberMe) {
       return {
         email: users[j][0],
         displayName: users[j][2],
-        token: token
+        token: token,
+        mustChangePassword: userMustChangePassword_(users[j])
       };
     }
   }
@@ -290,7 +525,8 @@ function userFromLoginResult_(loginResult) {
     totalScore: 0,
     totalQuizzes: 0,
     perfectScores: 0,
-    streak: 0
+    streak: 0,
+    mustChangePassword: loginResult.mustChangePassword === true
   };
 }
 

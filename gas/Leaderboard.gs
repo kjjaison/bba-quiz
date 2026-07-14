@@ -96,6 +96,7 @@ function getUserProfile_(user) {
     email: user.email,
     stats: stats,
     badges: badges,
-    rank: rank
+    rank: rank,
+    mustChangePassword: user.mustChangePassword === true
   };
 }

@@ -23,6 +23,10 @@ function apiRequestOtp(email) {
   return { success: true, data: requestOTP_(email) };
 }
 
+function apiForgotPassword(email) {
+  return { success: true, data: requestPasswordReset_(email) };
+}
+
 function apiLoginOtp(email, otp, rememberMe, language) {
   var response = authResponseWithQuiz_(
     loginWithOTP_(email, otp, rememberMe),
@@ -45,6 +49,11 @@ function apiSubmitQuiz(token, answers, language) {
 function apiLeaderboard(token, period) {
   validateSession_(token);
   return { success: true, leaderboard: getLeaderboard_(period) };
+}
+
+function apiChangePassword(token, currentPassword, newPassword) {
+  var user = validateSession_(token);
+  return { success: true, result: changePassword_(user, currentPassword, newPassword) };
 }
 
 function apiProfile(token) {

@@ -49,20 +49,92 @@ function normalizeCorrectAnswer_(value) {
   return String(value).trim().toUpperCase().charAt(0);
 }
 
-function parseQuestionRow_(row, includeAnswer) {
-  var question = {
-    id: Number(row[QCOL.NUM]),
-    question: row[QCOL.TEXT],
-    chapter: String(row[QCOL.CHAPTER] || '').trim(),
-    options: {
-      A: row[QCOL.OPTION_A],
-      B: row[QCOL.OPTION_B],
-      C: row[QCOL.OPTION_C],
-      D: row[QCOL.OPTION_D]
+/** Detect column indices from header row (handles sheets with/without book_reference). */
+function getQuestionColumnMapForSheet_(sheet) {
+  if (!sheet || sheet.getLastRow() < 1) return QCOL;
+
+  var header = sheet.getRange(1, 1, 1, Math.max(sheet.getLastColumn(), 9)).getValues()[0];
+  var norm = function(s) {
+    return String(s || '').trim().toLowerCase().replace(/\s+/g, '_');
+  };
+  var idx = {};
+  for (var i = 0; i < header.length; i++) {
+    var h = norm(header[i]);
+    if (h) idx[h] = i;
+  }
+
+  if (idx.option_a === undefined) return QCOL;
+
+  var correctCol = idx.correct_answer;
+  if (correctCol === undefined) correctCol = idx.correct;
+  if (correctCol === undefined) correctCol = idx.option_a + 4;
+
+  return {
+    QUIZ_ID: idx.quiz_id !== undefined ? idx.quiz_id : 0,
+    NUM: idx.question_num !== undefined ? idx.question_num : 1,
+    TEXT: idx.question !== undefined ? idx.question : 2,
+    CHAPTER: idx.book_reference !== undefined ? idx.book_reference : -1,
+    OPTION_A: idx.option_a,
+    OPTION_B: idx.option_b,
+    OPTION_C: idx.option_c,
+    OPTION_D: idx.option_d,
+    CORRECT: correctCol
+  };
+}
+
+/** Ensure options always use A/B/C/D keys (handles Firestore map variants). */
+function normalizeQuestionOptions_(options) {
+  var result = { A: '', B: '', C: '', D: '' };
+  if (!options) return result;
+
+  if (typeof options === 'string') {
+    try { options = JSON.parse(options); } catch (e) { return result; }
+  }
+
+  if (Object.prototype.toString.call(options) === '[object Array]') {
+    result.A = String(options[0] != null ? options[0] : '');
+    result.B = String(options[1] != null ? options[1] : '');
+    result.C = String(options[2] != null ? options[2] : '');
+    result.D = String(options[3] != null ? options[3] : '');
+    return result;
+  }
+
+  var keyMap = {
+    A: ['A', 'a', 'option_a', 'optionA', '0'],
+    B: ['B', 'b', 'option_b', 'optionB', '1'],
+    C: ['C', 'c', 'option_c', 'optionC', '2'],
+    D: ['D', 'd', 'option_d', 'optionD', '3']
+  };
+
+  ['A', 'B', 'C', 'D'].forEach(function(letter) {
+    var keys = keyMap[letter];
+    for (var i = 0; i < keys.length; i++) {
+      var val = options[keys[i]];
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        result[letter] = String(val);
+        break;
+      }
     }
+  });
+
+  return result;
+}
+
+function parseQuestionRow_(row, includeAnswer, col) {
+  col = col || QCOL;
+  var question = {
+    id: Number(row[col.NUM]),
+    question: row[col.TEXT],
+    chapter: col.CHAPTER >= 0 ? String(row[col.CHAPTER] || '').trim() : '',
+    options: normalizeQuestionOptions_({
+      A: row[col.OPTION_A],
+      B: row[col.OPTION_B],
+      C: row[col.OPTION_C],
+      D: row[col.OPTION_D]
+    })
   };
   if (includeAnswer) {
-    question.correctAnswer = normalizeCorrectAnswer_(row[QCOL.CORRECT]);
+    question.correctAnswer = normalizeCorrectAnswer_(row[col.CORRECT]);
   }
   return question;
 }
@@ -103,6 +175,60 @@ function buildQuizTitle_(book, scheduleChapter, bookReference) {
   return bookReference || book || scheduleChapter || '';
 }
 
+function useFirestoreForQuiz_() {
+  var setting = String(getSetting_('quiz_data_source') || CONFIG.QUIZ_DATA_SOURCE || 'auto').toLowerCase();
+  if (setting === 'sheet') return false;
+  if (setting === 'firestore') return true;
+
+  try {
+    getFirebaseProjectId_();
+    if (getFirestoreAuthMode_() === 'service_account') {
+      getFirebaseCredentials_();
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
+function getScheduleForDate_(today) {
+  if (useFirestoreForQuiz_()) {
+    try {
+      var doc = getFirestoreScheduleForDate_(today);
+      if (doc && doc.quizId) {
+        return {
+          quizId: String(doc.quizId),
+          book: String(doc.book || ''),
+          chapter: String(doc.chapter || ''),
+          title: String(doc.title || ''),
+          source: 'firestore'
+        };
+      }
+    } catch (err) {
+      Logger.log('Firestore schedule read failed, using sheet: ' + (err.message || err));
+    }
+  }
+
+  var schedule = getSheetData_(CONFIG.SHEETS.SCHEDULE);
+  for (var i = 1; i < schedule.length; i++) {
+    var rowDate = schedule[i][0];
+    var dateStr = rowDate instanceof Date
+      ? Utilities.formatDate(rowDate, CONFIG.TIMEZONE, 'yyyy-MM-dd')
+      : String(rowDate).substring(0, 10);
+
+    if (dateStr === today) {
+      return {
+        quizId: String(schedule[i][3] || schedule[i][2] || ''),
+        book: String(schedule[i][1] || ''),
+        chapter: String(schedule[i][2] || ''),
+        title: '',
+        source: 'sheet'
+      };
+    }
+  }
+  return null;
+}
+
 function countQuestionsForQuiz_(quizId, language) {
   return loadQuestionsForQuiz_(quizId, language, false).length;
 }
@@ -126,33 +252,20 @@ function validateQuizReady_(quizId, book, chapter, language) {
 function getTodayQuiz_(user, language) {
   var lang = normalizeLanguage_(language);
   var today = todayDate_();
-  var schedule = getSheetData_(CONFIG.SHEETS.SCHEDULE);
+  var scheduleEntry = getScheduleForDate_(today);
 
-  var quizId = null;
-  var chapter = '';
-  var book = '';
-
-  for (var i = 1; i < schedule.length; i++) {
-    var rowDate = schedule[i][0];
-    var dateStr = rowDate instanceof Date
-      ? Utilities.formatDate(rowDate, CONFIG.TIMEZONE, 'yyyy-MM-dd')
-      : String(rowDate).substring(0, 10);
-
-    if (dateStr === today) {
-      quizId = schedule[i][3] || schedule[i][2];
-      book = schedule[i][1] || '';
-      chapter = schedule[i][2] || '';
-      break;
-    }
-  }
-
-  if (!quizId) {
+  if (!scheduleEntry || !scheduleEntry.quizId) {
     return {
       date: today,
       available: false,
       message: 'No quiz scheduled for today. Check back tomorrow!'
     };
   }
+
+  var quizId = scheduleEntry.quizId;
+  var book = scheduleEntry.book;
+  var chapter = scheduleEntry.chapter;
+  var dataSource = scheduleEntry.source;
 
   var submission = getSubmission_(user.email, today);
   var includeAnswers = !!submission;
@@ -169,15 +282,16 @@ function getTodayQuiz_(user, language) {
       book: book,
       chapter: chapter,
       language: lang,
+      dataSource: dataSource,
       message:
         'Today\'s quiz (' + label + ') is not ready yet. ' +
         'It needs at least ' + minRequired + ' questions but only has ' + questionCount + '. ' +
-        'Please ask an admin to add more questions in the sheet.'
+        'Please ask an admin to sync questions to Firestore or add more in the sheet.'
     };
   }
 
   var bookReference = primaryBookReferenceFromQuestions_(questions);
-  var title = buildQuizTitle_(book, chapter, bookReference);
+  var title = scheduleEntry.title || buildQuizTitle_(book, chapter, bookReference);
   var displayChapter = title || chapter;
 
   if (submission) {
@@ -189,6 +303,7 @@ function getTodayQuiz_(user, language) {
       chapter: displayChapter,
       title: title,
       language: lang,
+      dataSource: dataSource,
       questionCount: submission.totalQuestions,
       submitted: true,
       score: submission.score,
@@ -206,6 +321,7 @@ function getTodayQuiz_(user, language) {
     chapter: displayChapter,
     title: title,
     language: lang,
+    dataSource: dataSource,
     questionCount: questionCount,
     submitted: false,
     questions: questions
@@ -214,6 +330,18 @@ function getTodayQuiz_(user, language) {
 
 function loadQuestionsForQuiz_(quizId, language, includeAnswers) {
   var lang = normalizeLanguage_(language);
+
+  if (useFirestoreForQuiz_()) {
+    try {
+      var fromFirestore = loadQuestionsFromFirestore_(quizId, lang, includeAnswers);
+      if (fromFirestore.length) {
+        return fromFirestore;
+      }
+    } catch (err) {
+      Logger.log('Firestore questions read failed, using sheet: ' + (err.message || err));
+    }
+  }
+
   var cache = CacheService.getScriptCache();
   var cacheKey = 'qq:' + lang + ':' + quizId + ':' + (includeAnswers ? 'a' : 'q');
   var cached = cache.get(cacheKey);
@@ -222,16 +350,21 @@ function loadQuestionsForQuiz_(quizId, language, includeAnswers) {
   }
 
   var sheetName = CONFIG.LANGUAGES[lang].sheet;
+  var sheet = getSheet_(sheetName);
+  var col = getQuestionColumnMapForSheet_(sheet);
   var data = getSheetData_(sheetName);
   if (!data.length && lang !== 'en') {
-    data = getSheetData_(CONFIG.LANGUAGES.en.sheet);
+    sheetName = CONFIG.LANGUAGES.en.sheet;
+    sheet = getSheet_(sheetName);
+    col = getQuestionColumnMapForSheet_(sheet);
+    data = getSheetData_(sheetName);
   }
 
   var questions = [];
   for (var i = 1; i < data.length; i++) {
-    if (String(data[i][QCOL.QUIZ_ID]) === String(quizId)) {
-      if (!String(data[i][QCOL.TEXT] || '').trim()) continue;
-      questions.push(parseQuestionRow_(data[i], includeAnswers));
+    if (String(data[i][col.QUIZ_ID]) === String(quizId)) {
+      if (!String(data[i][col.TEXT] || '').trim()) continue;
+      questions.push(parseQuestionRow_(data[i], includeAnswers, col));
     }
   }
 
@@ -288,19 +421,8 @@ function submitQuiz_(user, answers, language) {
     throw new Error('You have already submitted today\'s quiz. Answers cannot be changed.');
   }
 
-  var schedule = getSheetData_(CONFIG.SHEETS.SCHEDULE);
-  var quizId = null;
-
-  for (var i = 1; i < schedule.length; i++) {
-    var rowDate = schedule[i][0];
-    var dateStr = rowDate instanceof Date
-      ? Utilities.formatDate(rowDate, CONFIG.TIMEZONE, 'yyyy-MM-dd')
-      : String(rowDate).substring(0, 10);
-    if (dateStr === today) {
-      quizId = schedule[i][3] || schedule[i][2];
-      break;
-    }
-  }
+  var scheduleEntry = getScheduleForDate_(today);
+  var quizId = scheduleEntry ? scheduleEntry.quizId : null;
 
   if (!quizId) {
     throw new Error('No quiz available for today');

@@ -1,0 +1,41 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Public quiz content (no correct answers — those live in answerKeys).
+    match /questions/{questionId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /schedule/{dateId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    match /quizzes/{quizId} {
+      allow read: if true;
+      allow write: if false;
+    }
+
+    // Server-only: used by Cloud Functions for scoring.
+    match /answerKeys/{keyId} {
+      allow read, write: if false;
+    }
+
+    // Runtime data — written only by Cloud Functions / Admin SDK.
+    match /submissions/{submissionId} {
+      allow read, write: if false;
+    }
+
+    match /users/{userId} {
+      allow read, write: if false;
+    }
+
+    match /syncMeta/{docId} {
+      allow read: if true;
+      allow write: if false;
+    }
+  }
+}

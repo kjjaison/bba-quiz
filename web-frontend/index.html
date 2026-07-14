@@ -6,11 +6,11 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
   <meta http-equiv="Pragma" content="no-cache" />
   <meta http-equiv="Expires" content="0" />
-  <meta name="bba-app-version" content="2026-07-10.2" />
+  <meta name="bba-app-version" content="2026-07-14.4" />
   <title>BBA Dublin Bible Quiz</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=2026-07-10.2" />
+  <link rel="stylesheet" href="./styles.css?v=2026-07-14.4" />
 </head>
 <body>
 <div id="embed-help" class="embed-help hidden">
@@ -66,6 +66,23 @@
               Remember me on this device
             </label>
             <button class="btn btn-primary" id="btn-login">Sign In</button>
+            <p class="trouble-row">
+              <a href="#" id="link-forgot-password">Forgot password?</a>
+            </p>
+          </div>
+
+          <div id="forgot-password-form" class="hidden">
+            <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1rem;">
+              Enter your email and we will send you a new temporary password.
+            </p>
+            <div class="form-group">
+              <label for="forgot-email">Email</label>
+              <input type="email" id="forgot-email" placeholder="your@email.com" required>
+            </div>
+            <button class="btn btn-primary" id="btn-forgot-password">Email New Password</button>
+            <p class="trouble-row">
+              <a href="#" id="link-back-to-login">Back to sign in</a>
+            </p>
           </div>
 
           <div id="login-otp-form" class="hidden">
@@ -112,6 +129,27 @@
     </div>
 
     <!-- Main App -->
+    <div id="change-password-overlay" class="password-overlay hidden">
+      <div class="card">
+        <h3>Set a new password</h3>
+        <p class="hint" id="change-password-hint">You signed in with a temporary password. Choose a new password to continue.</p>
+        <div id="alert-change-password" class="alert hidden"></div>
+        <div class="form-group">
+          <label for="cp-current">Current password</label>
+          <input type="password" id="cp-current" placeholder="Temporary or current password" required>
+        </div>
+        <div class="form-group">
+          <label for="cp-new">New password</label>
+          <input type="password" id="cp-new" placeholder="At least 6 characters" required>
+        </div>
+        <div class="form-group">
+          <label for="cp-confirm">Confirm new password</label>
+          <input type="password" id="cp-confirm" placeholder="Re-enter new password" required>
+        </div>
+        <button class="btn btn-primary" id="btn-change-password">Update Password</button>
+      </div>
+    </div>
+
     <div id="app-screen" class="hidden">
       <div class="nav-bar">
         <div class="user-info">Welcome, <strong id="user-name"></strong></div>
@@ -155,7 +193,23 @@
       <div id="view-profile" class="hidden">
         <div class="card">
           <div class="stats-row" id="profile-stats"></div>
-          <h3 style="margin-bottom:1rem;">Your Badges</h3>
+          <div class="profile-section">
+            <h3>Change Password</h3>
+            <div class="form-group">
+              <label for="profile-cp-current">Current password</label>
+              <input type="password" id="profile-cp-current" placeholder="Your current password">
+            </div>
+            <div class="form-group">
+              <label for="profile-cp-new">New password</label>
+              <input type="password" id="profile-cp-new" placeholder="At least 6 characters">
+            </div>
+            <div class="form-group">
+              <label for="profile-cp-confirm">Confirm new password</label>
+              <input type="password" id="profile-cp-confirm" placeholder="Re-enter new password">
+            </div>
+            <button class="btn btn-outline" id="btn-profile-change-password">Update Password</button>
+          </div>
+          <h3 style="margin-bottom:1rem;margin-top:1.5rem;">Your Badges</h3>
           <div class="badges-grid" id="badges-grid"></div>
         </div>
       </div>
@@ -166,7 +220,7 @@
     "Blessed are those who hear the word of God and keep it." — Luke 11:28
   </footer>
 
-  <script src="./config.js?v=2026-07-10.2"></script>
-  <script src="./app.js?v=2026-07-10.2"></script>
+  <script src="./config.js?v=2026-07-14.4"></script>
+  <script src="./app.js?v=2026-07-14.4"></script>
 </body>
 </html>

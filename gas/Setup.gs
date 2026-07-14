@@ -11,7 +11,7 @@ function setupSheets() {
   createSheetWithHeaders_(ss, CONFIG.SHEETS.USERS, [
     'email', 'password_hash', 'display_name', 'created_at',
     'session_token', 'session_expires', 'total_score',
-    'total_quizzes', 'perfect_scores', 'current_streak'
+    'total_quizzes', 'perfect_scores', 'current_streak', 'must_change_password'
   ]);
 
   createSheetWithHeaders_(ss, CONFIG.SHEETS.OTP, [
@@ -265,6 +265,14 @@ function onOpen() {
       .addItem('Run initial setup', 'setupSheets')
       .addItem('Refresh schedule from Questions', 'refreshDailyScheduleFromQuestions')
       .addItem('Validate upcoming quizzes', 'validateUpcomingQuizzes')
+      .addSeparator()
+      .addItem('Sync quiz data to Firestore', 'syncQuizToFirestoreWithMessage')
+      .addItem('Authorize Firebase access', 'authorizeFirestoreAccess')
+      .addItem('Authorize email sending', 'authorizeQuizEmailAccess')
+      .addItem('Test quiz email', 'testQuizEmailSend')
+      .addItem('Test Firebase connection', 'testFirebaseConnection')
+      .addItem('Install 15-min Firestore sync (Apps Script)', 'installFirestoreSyncTrigger')
+      .addSeparator()
       .addItem('Show Google Sites embed URL', 'showQuizEmbedUrl')
       .addToUi();
   } catch (e) {

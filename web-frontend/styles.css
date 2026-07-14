@@ -218,6 +218,46 @@
       font-weight: 600;
     }
 
+    .password-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(26, 54, 93, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      z-index: 1000;
+    }
+
+    .password-overlay.hidden { display: none; }
+
+    .password-overlay .card {
+      width: 100%;
+      max-width: 420px;
+      margin: 0;
+    }
+
+    .password-overlay h3 {
+      margin-bottom: 0.5rem;
+      color: var(--primary);
+    }
+
+    .password-overlay .hint {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+
+    .profile-section {
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .profile-section h3 {
+      margin-bottom: 1rem;
+    }
+
     .quiz-header {
       text-align: center;
       margin-bottom: 1.5rem;

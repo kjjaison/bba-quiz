@@ -230,6 +230,46 @@
       font-weight: 600;
     }
 
+    .password-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(26, 54, 93, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      z-index: 1000;
+    }
+
+    .password-overlay.hidden { display: none; }
+
+    .password-overlay .card {
+      width: 100%;
+      max-width: 420px;
+      margin: 0;
+    }
+
+    .password-overlay h3 {
+      margin-bottom: 0.5rem;
+      color: var(--primary);
+    }
+
+    .password-overlay .hint {
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin-bottom: 1rem;
+    }
+
+    .profile-section {
+      margin-top: 1.5rem;
+      padding-top: 1.5rem;
+      border-top: 1px solid var(--border);
+    }
+
+    .profile-section h3 {
+      margin-bottom: 1rem;
+    }
+
     .quiz-header {
       text-align: center;
       margin-bottom: 1.5rem;
@@ -534,6 +574,23 @@
               Remember me on this device
             </label>
             <button class="btn btn-primary" id="btn-login">Sign In</button>
+            <p class="trouble-row">
+              <a href="#" id="link-forgot-password">Forgot password?</a>
+            </p>
+          </div>
+
+          <div id="forgot-password-form" class="hidden">
+            <p style="color:var(--text-muted);font-size:0.9rem;margin-bottom:1rem;">
+              Enter your email and we will send you a new temporary password.
+            </p>
+            <div class="form-group">
+              <label for="forgot-email">Email</label>
+              <input type="email" id="forgot-email" placeholder="your@email.com" required>
+            </div>
+            <button class="btn btn-primary" id="btn-forgot-password">Email New Password</button>
+            <p class="trouble-row">
+              <a href="#" id="link-back-to-login">Back to sign in</a>
+            </p>
           </div>
 
           <div id="login-otp-form" class="hidden">
@@ -580,6 +637,27 @@
     </div>
 
     <!-- Main App -->
+    <div id="change-password-overlay" class="password-overlay hidden">
+      <div class="card">
+        <h3>Set a new password</h3>
+        <p class="hint" id="change-password-hint">You signed in with a temporary password. Choose a new password to continue.</p>
+        <div id="alert-change-password" class="alert hidden"></div>
+        <div class="form-group">
+          <label for="cp-current">Current password</label>
+          <input type="password" id="cp-current" placeholder="Temporary or current password" required>
+        </div>
+        <div class="form-group">
+          <label for="cp-new">New password</label>
+          <input type="password" id="cp-new" placeholder="At least 6 characters" required>
+        </div>
+        <div class="form-group">
+          <label for="cp-confirm">Confirm new password</label>
+          <input type="password" id="cp-confirm" placeholder="Re-enter new password" required>
+        </div>
+        <button class="btn btn-primary" id="btn-change-password">Update Password</button>
+      </div>
+    </div>
+
     <div id="app-screen" class="hidden">
       <div class="nav-bar">
         <div class="user-info">Welcome, <strong id="user-name"></strong></div>
@@ -623,7 +701,23 @@
       <div id="view-profile" class="hidden">
         <div class="card">
           <div class="stats-row" id="profile-stats"></div>
-          <h3 style="margin-bottom:1rem;">Your Badges</h3>
+          <div class="profile-section">
+            <h3>Change Password</h3>
+            <div class="form-group">
+              <label for="profile-cp-current">Current password</label>
+              <input type="password" id="profile-cp-current" placeholder="Your current password">
+            </div>
+            <div class="form-group">
+              <label for="profile-cp-new">New password</label>
+              <input type="password" id="profile-cp-new" placeholder="At least 6 characters">
+            </div>
+            <div class="form-group">
+              <label for="profile-cp-confirm">Confirm new password</label>
+              <input type="password" id="profile-cp-confirm" placeholder="Re-enter new password">
+            </div>
+            <button class="btn btn-outline" id="btn-profile-change-password">Update Password</button>
+          </div>
+          <h3 style="margin-bottom:1rem;margin-top:1.5rem;">Your Badges</h3>
           <div class="badges-grid" id="badges-grid"></div>
         </div>
       </div>
@@ -824,19 +918,23 @@
               register: 'apiRegister',
               login: 'apiLogin',
               requestOtp: 'apiRequestOtp',
+              forgotPassword: 'apiForgotPassword',
               loginOtp: 'apiLoginOtp',
               quiz: 'apiGetQuiz',
               submit: 'apiSubmitQuiz',
               leaderboard: 'apiLeaderboard',
+              changePassword: 'apiChangePassword',
               profile: 'apiProfile'
             };
             const fn = fnMap[action];
             const args = action === 'register' ? [params.email, params.password, params.displayName, params.rememberMe, params.language]
               : action === 'login' ? [params.email, params.password, params.rememberMe, params.language]
               : action === 'requestOtp' ? [params.email]
+              : action === 'forgotPassword' ? [params.email]
               : action === 'loginOtp' ? [params.email, params.otp, params.rememberMe, params.language]
               : action === 'quiz' ? [params.token, params.language]
               : action === 'submit' ? [params.token, params.answers, params.language]
+              : action === 'changePassword' ? [params.token, params.currentPassword, params.newPassword]
               : action === 'leaderboard' ? [params.token, params.period]
               : action === 'profile' ? [params.token]
               : [];
@@ -874,7 +972,11 @@
       localStorage.setItem(REMEMBER_PREF_KEY, remember ? 'true' : 'false');
 
       currentToken = user.token;
-      currentUser = { email: user.email, displayName: user.displayName };
+      currentUser = {
+        email: user.email,
+        displayName: user.displayName,
+        mustChangePassword: user.mustChangePassword === true
+      };
 
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
@@ -907,11 +1009,88 @@
       });
     }
 
+    function persistCurrentUser() {
+      if (!currentUser || !currentToken) return;
+      const payload = JSON.stringify(currentUser);
+      if (localStorage.getItem(TOKEN_KEY) === currentToken) {
+        localStorage.setItem(USER_KEY, payload);
+      } else if (sessionStorage.getItem(SESSION_TOKEN_KEY) === currentToken) {
+        sessionStorage.setItem(SESSION_USER_KEY, payload);
+      }
+    }
+
+    function showChangePasswordOverlay(required) {
+      const overlay = document.getElementById('change-password-overlay');
+      document.getElementById('change-password-hint').textContent = required
+        ? 'You signed in with a temporary password. Choose a new password to continue.'
+        : 'Enter your current password and choose a new one.';
+      overlay.classList.remove('hidden');
+    }
+
+    function hideChangePasswordOverlay() {
+      document.getElementById('change-password-overlay').classList.add('hidden');
+      document.getElementById('cp-current').value = '';
+      document.getElementById('cp-new').value = '';
+      document.getElementById('cp-confirm').value = '';
+      document.getElementById('alert-change-password').classList.add('hidden');
+    }
+
+    async function submitPasswordChange(currentId, newId, confirmId, alertId, onSuccess) {
+      const currentPassword = document.getElementById(currentId).value;
+      const newPassword = document.getElementById(newId).value;
+      const confirmPassword = document.getElementById(confirmId).value;
+
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        showAlert(alertId, 'Please fill in all password fields.', 'error');
+        return;
+      }
+      if (newPassword.length < 6) {
+        showAlert(alertId, 'New password must be at least 6 characters.', 'error');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        showAlert(alertId, 'New passwords do not match.', 'error');
+        return;
+      }
+
+      try {
+        await API.call('changePassword', {
+          token: currentToken,
+          currentPassword,
+          newPassword
+        });
+        currentUser.mustChangePassword = false;
+        persistCurrentUser();
+        if (onSuccess) onSuccess();
+        else showAlert('alert-app', 'Password updated successfully.', 'success');
+      } catch (err) {
+        showAlert(alertId, err.message || 'Could not update password', 'error');
+      }
+    }
+
+    async function checkMustChangePassword() {
+      if (currentUser && currentUser.mustChangePassword === true) {
+        showChangePasswordOverlay(true);
+        return;
+      }
+      try {
+        const res = await API.call('profile', { token: currentToken });
+        if (res.profile && res.profile.mustChangePassword) {
+          currentUser.mustChangePassword = true;
+          persistCurrentUser();
+          showChangePasswordOverlay(true);
+        }
+      } catch (err) {
+        // ignore — quiz can still load
+      }
+    }
+
     function showApp(prefetchedQuiz) {
       document.getElementById('auth-screen').classList.add('hidden');
       document.getElementById('app-screen').classList.remove('hidden');
       document.getElementById('user-name').textContent = currentUser.displayName;
       syncLanguageSelect();
+      checkMustChangePassword();
       if (prefetchedQuiz) {
         applyQuizData(prefetchedQuiz);
       } else {
@@ -920,6 +1099,7 @@
     }
 
     function showAuth() {
+      hideChangePasswordOverlay();
       document.getElementById('auth-screen').classList.remove('hidden');
       document.getElementById('app-screen').classList.add('hidden');
       syncRememberCheckboxes();
@@ -940,8 +1120,12 @@
       e.target.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       e.target.classList.add('active');
       const mode = e.target.dataset.loginMode;
+      document.getElementById('forgot-password-form').classList.add('hidden');
       document.getElementById('login-password-form').classList.toggle('hidden', mode !== 'password');
       document.getElementById('login-otp-form').classList.toggle('hidden', mode !== 'otp');
+      if (mode === 'password') {
+        document.querySelector('#panel-login .tabs').classList.remove('hidden');
+      }
     });
 
     document.getElementById('app-tabs').addEventListener('click', e => {
@@ -961,6 +1145,45 @@
       document.querySelectorAll('#lb-tabs .tab').forEach(t => t.classList.remove('active'));
       e.target.classList.add('active');
       loadLeaderboard(e.target.dataset.period);
+    });
+
+    function showLoginPasswordForm() {
+      document.getElementById('login-password-form').classList.remove('hidden');
+      document.getElementById('forgot-password-form').classList.add('hidden');
+      document.querySelector('#panel-login .tabs').classList.remove('hidden');
+    }
+
+    function showForgotPasswordForm() {
+      const loginEmail = document.getElementById('login-email').value.trim();
+      if (loginEmail) {
+        document.getElementById('forgot-email').value = loginEmail;
+      }
+      document.getElementById('login-password-form').classList.add('hidden');
+      document.getElementById('forgot-password-form').classList.remove('hidden');
+      document.querySelector('#panel-login .tabs').classList.add('hidden');
+    }
+
+    document.getElementById('link-forgot-password').addEventListener('click', e => {
+      e.preventDefault();
+      showForgotPasswordForm();
+    });
+
+    document.getElementById('link-back-to-login').addEventListener('click', e => {
+      e.preventDefault();
+      showLoginPasswordForm();
+    });
+
+    document.getElementById('btn-forgot-password').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-forgot-password');
+      setLoading(btn, true);
+      try {
+        await API.call('forgotPassword', { email: document.getElementById('forgot-email').value });
+        showAlert('alert-auth', 'A new password has been sent to your email.', 'success');
+        showLoginPasswordForm();
+      } catch (err) {
+        showAlert('alert-auth', err.message || 'Could not reset password', 'error');
+      }
+      setLoading(btn, false);
     });
 
     // Auth actions
@@ -1029,6 +1252,34 @@
       } catch (err) {
         showAlert('alert-auth', err.message || 'Invalid code', 'error');
       }
+      setLoading(btn, false);
+    });
+
+    document.getElementById('btn-change-password').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-change-password');
+      setLoading(btn, true);
+      await submitPasswordChange('cp-current', 'cp-new', 'cp-confirm', 'alert-change-password', () => {
+        hideChangePasswordOverlay();
+        showAlert('alert-app', 'Password updated successfully.', 'success');
+      });
+      setLoading(btn, false);
+    });
+
+    document.getElementById('btn-profile-change-password').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-profile-change-password');
+      setLoading(btn, true);
+      await submitPasswordChange(
+        'profile-cp-current',
+        'profile-cp-new',
+        'profile-cp-confirm',
+        'alert-app',
+        () => {
+          document.getElementById('profile-cp-current').value = '';
+          document.getElementById('profile-cp-new').value = '';
+          document.getElementById('profile-cp-confirm').value = '';
+          hideChangePasswordOverlay();
+        }
+      );
       setLoading(btn, false);
     });
 
@@ -1206,13 +1457,45 @@
       container.classList.remove('hidden');
     }
 
+    function normalizeQuestionOptions(options) {
+      const result = { A: '', B: '', C: '', D: '' };
+      if (!options) return result;
+      if (typeof options === 'string') {
+        try { options = JSON.parse(options); } catch (e) { return result; }
+      }
+      if (Array.isArray(options)) {
+        result.A = String(options[0] ?? '');
+        result.B = String(options[1] ?? '');
+        result.C = String(options[2] ?? '');
+        result.D = String(options[3] ?? '');
+        return result;
+      }
+      const keyMap = {
+        A: ['A', 'a', 'option_a', 'optionA', '0'],
+        B: ['B', 'b', 'option_b', 'optionB', '1'],
+        C: ['C', 'c', 'option_c', 'optionC', '2'],
+        D: ['D', 'd', 'option_d', 'optionD', '3']
+      };
+      ['A', 'B', 'C', 'D'].forEach(letter => {
+        for (const key of keyMap[letter]) {
+          const val = options[key];
+          if (val !== undefined && val !== null && String(val).trim() !== '') {
+            result[letter] = String(val);
+            break;
+          }
+        }
+      });
+      return result;
+    }
+
     function renderQuestion(q, num, locked, userAnswer) {
       let html = '<div class="question-card">';
       html += '<div class="question-num">Question ' + num + '</div>';
       html += '<div class="question-text">' + escapeHtml(q.question) + '</div>';
       html += '<div class="options">';
+      const opts = normalizeQuestionOptions(q.options);
       ['A', 'B', 'C', 'D'].forEach(letter => {
-        const text = q.options[letter];
+        const text = opts[letter];
         if (!text) return;
         let cls = 'option' + (locked ? ' locked' : '');
         if (locked) {

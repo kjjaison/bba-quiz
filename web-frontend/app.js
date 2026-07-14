@@ -1,4 +1,4 @@
-const APP_VERSION = '2026-07-10.2';
+const APP_VERSION = '2026-07-14.4';
     const VERSION_KEY = 'bba_quiz_app_version';
 
     (function enforceAppVersion() {
@@ -187,19 +187,23 @@ const APP_VERSION = '2026-07-10.2';
               register: 'apiRegister',
               login: 'apiLogin',
               requestOtp: 'apiRequestOtp',
+              forgotPassword: 'apiForgotPassword',
               loginOtp: 'apiLoginOtp',
               quiz: 'apiGetQuiz',
               submit: 'apiSubmitQuiz',
               leaderboard: 'apiLeaderboard',
+              changePassword: 'apiChangePassword',
               profile: 'apiProfile'
             };
             const fn = fnMap[action];
-            const args = action === 'register' ? [params.email, params.password, params.displayName, params.rememberMe]
-              : action === 'login' ? [params.email, params.password, params.rememberMe]
+            const args = action === 'register' ? [params.email, params.password, params.displayName, params.rememberMe, params.language]
+              : action === 'login' ? [params.email, params.password, params.rememberMe, params.language]
               : action === 'requestOtp' ? [params.email]
-              : action === 'loginOtp' ? [params.email, params.otp, params.rememberMe]
+              : action === 'forgotPassword' ? [params.email]
+              : action === 'loginOtp' ? [params.email, params.otp, params.rememberMe, params.language]
               : action === 'quiz' ? [params.token, params.language]
               : action === 'submit' ? [params.token, params.answers, params.language]
+              : action === 'changePassword' ? [params.token, params.currentPassword, params.newPassword]
               : action === 'leaderboard' ? [params.token, params.period]
               : action === 'profile' ? [params.token]
               : [];
@@ -237,7 +241,11 @@ const APP_VERSION = '2026-07-10.2';
       localStorage.setItem(REMEMBER_PREF_KEY, remember ? 'true' : 'false');
 
       currentToken = user.token;
-      currentUser = { email: user.email, displayName: user.displayName };
+      currentUser = {
+        email: user.email,
+        displayName: user.displayName,
+        mustChangePassword: user.mustChangePassword === true
+      };
 
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
@@ -270,15 +278,97 @@ const APP_VERSION = '2026-07-10.2';
       });
     }
 
-    function showApp() {
+    function persistCurrentUser() {
+      if (!currentUser || !currentToken) return;
+      const payload = JSON.stringify(currentUser);
+      if (localStorage.getItem(TOKEN_KEY) === currentToken) {
+        localStorage.setItem(USER_KEY, payload);
+      } else if (sessionStorage.getItem(SESSION_TOKEN_KEY) === currentToken) {
+        sessionStorage.setItem(SESSION_USER_KEY, payload);
+      }
+    }
+
+    function showChangePasswordOverlay(required) {
+      const overlay = document.getElementById('change-password-overlay');
+      document.getElementById('change-password-hint').textContent = required
+        ? 'You signed in with a temporary password. Choose a new password to continue.'
+        : 'Enter your current password and choose a new one.';
+      overlay.classList.remove('hidden');
+    }
+
+    function hideChangePasswordOverlay() {
+      document.getElementById('change-password-overlay').classList.add('hidden');
+      document.getElementById('cp-current').value = '';
+      document.getElementById('cp-new').value = '';
+      document.getElementById('cp-confirm').value = '';
+      document.getElementById('alert-change-password').classList.add('hidden');
+    }
+
+    async function submitPasswordChange(currentId, newId, confirmId, alertId, onSuccess) {
+      const currentPassword = document.getElementById(currentId).value;
+      const newPassword = document.getElementById(newId).value;
+      const confirmPassword = document.getElementById(confirmId).value;
+
+      if (!currentPassword || !newPassword || !confirmPassword) {
+        showAlert(alertId, 'Please fill in all password fields.', 'error');
+        return;
+      }
+      if (newPassword.length < 6) {
+        showAlert(alertId, 'New password must be at least 6 characters.', 'error');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        showAlert(alertId, 'New passwords do not match.', 'error');
+        return;
+      }
+
+      try {
+        await API.call('changePassword', {
+          token: currentToken,
+          currentPassword,
+          newPassword
+        });
+        currentUser.mustChangePassword = false;
+        persistCurrentUser();
+        if (onSuccess) onSuccess();
+        else showAlert('alert-app', 'Password updated successfully.', 'success');
+      } catch (err) {
+        showAlert(alertId, err.message || 'Could not update password', 'error');
+      }
+    }
+
+    async function checkMustChangePassword() {
+      if (currentUser && currentUser.mustChangePassword === true) {
+        showChangePasswordOverlay(true);
+        return;
+      }
+      try {
+        const res = await API.call('profile', { token: currentToken });
+        if (res.profile && res.profile.mustChangePassword) {
+          currentUser.mustChangePassword = true;
+          persistCurrentUser();
+          showChangePasswordOverlay(true);
+        }
+      } catch (err) {
+        // ignore — quiz can still load
+      }
+    }
+
+    function showApp(prefetchedQuiz) {
       document.getElementById('auth-screen').classList.add('hidden');
       document.getElementById('app-screen').classList.remove('hidden');
       document.getElementById('user-name').textContent = currentUser.displayName;
       syncLanguageSelect();
-      loadQuiz();
+      checkMustChangePassword();
+      if (prefetchedQuiz) {
+        applyQuizData(prefetchedQuiz);
+      } else {
+        loadQuiz();
+      }
     }
 
     function showAuth() {
+      hideChangePasswordOverlay();
       document.getElementById('auth-screen').classList.remove('hidden');
       document.getElementById('app-screen').classList.add('hidden');
       syncRememberCheckboxes();
@@ -299,8 +389,12 @@ const APP_VERSION = '2026-07-10.2';
       e.target.parentElement.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       e.target.classList.add('active');
       const mode = e.target.dataset.loginMode;
+      document.getElementById('forgot-password-form').classList.add('hidden');
       document.getElementById('login-password-form').classList.toggle('hidden', mode !== 'password');
       document.getElementById('login-otp-form').classList.toggle('hidden', mode !== 'otp');
+      if (mode === 'password') {
+        document.querySelector('#panel-login .tabs').classList.remove('hidden');
+      }
     });
 
     document.getElementById('app-tabs').addEventListener('click', e => {
@@ -322,6 +416,45 @@ const APP_VERSION = '2026-07-10.2';
       loadLeaderboard(e.target.dataset.period);
     });
 
+    function showLoginPasswordForm() {
+      document.getElementById('login-password-form').classList.remove('hidden');
+      document.getElementById('forgot-password-form').classList.add('hidden');
+      document.querySelector('#panel-login .tabs').classList.remove('hidden');
+    }
+
+    function showForgotPasswordForm() {
+      const loginEmail = document.getElementById('login-email').value.trim();
+      if (loginEmail) {
+        document.getElementById('forgot-email').value = loginEmail;
+      }
+      document.getElementById('login-password-form').classList.add('hidden');
+      document.getElementById('forgot-password-form').classList.remove('hidden');
+      document.querySelector('#panel-login .tabs').classList.add('hidden');
+    }
+
+    document.getElementById('link-forgot-password').addEventListener('click', e => {
+      e.preventDefault();
+      showForgotPasswordForm();
+    });
+
+    document.getElementById('link-back-to-login').addEventListener('click', e => {
+      e.preventDefault();
+      showLoginPasswordForm();
+    });
+
+    document.getElementById('btn-forgot-password').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-forgot-password');
+      setLoading(btn, true);
+      try {
+        await API.call('forgotPassword', { email: document.getElementById('forgot-email').value });
+        showAlert('alert-auth', 'A new password has been sent to your email.', 'success');
+        showLoginPasswordForm();
+      } catch (err) {
+        showAlert('alert-auth', err.message || 'Could not reset password', 'error');
+      }
+      setLoading(btn, false);
+    });
+
     // Auth actions
     document.getElementById('btn-login').addEventListener('click', async () => {
       const btn = document.getElementById('btn-login');
@@ -330,10 +463,11 @@ const APP_VERSION = '2026-07-10.2';
         const res = await API.call('login', {
           email: document.getElementById('login-email').value,
           password: document.getElementById('login-password').value,
-          rememberMe: document.getElementById('remember-login').checked
+          rememberMe: document.getElementById('remember-login').checked,
+          language: getLanguage()
         });
         saveSession(res.user, document.getElementById('remember-login').checked);
-        showApp();
+        showApp(res.quiz);
       } catch (err) {
         showAlert('alert-auth', err.message || 'Login failed', 'error');
       }
@@ -348,10 +482,11 @@ const APP_VERSION = '2026-07-10.2';
           email: document.getElementById('reg-email').value,
           password: document.getElementById('reg-password').value,
           displayName: document.getElementById('reg-name').value,
-          rememberMe: document.getElementById('remember-register').checked
+          rememberMe: document.getElementById('remember-register').checked,
+          language: getLanguage()
         });
         saveSession(res.user, document.getElementById('remember-register').checked);
-        showApp();
+        showApp(res.quiz);
       } catch (err) {
         showAlert('alert-auth', err.message || 'Registration failed', 'error');
       }
@@ -378,13 +513,42 @@ const APP_VERSION = '2026-07-10.2';
         const res = await API.call('loginOtp', {
           email: document.getElementById('otp-email').value,
           otp: document.getElementById('otp-code').value,
-          rememberMe: document.getElementById('remember-otp').checked
+          rememberMe: document.getElementById('remember-otp').checked,
+          language: getLanguage()
         });
         saveSession(res.user, document.getElementById('remember-otp').checked);
-        showApp();
+        showApp(res.quiz);
       } catch (err) {
         showAlert('alert-auth', err.message || 'Invalid code', 'error');
       }
+      setLoading(btn, false);
+    });
+
+    document.getElementById('btn-change-password').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-change-password');
+      setLoading(btn, true);
+      await submitPasswordChange('cp-current', 'cp-new', 'cp-confirm', 'alert-change-password', () => {
+        hideChangePasswordOverlay();
+        showAlert('alert-app', 'Password updated successfully.', 'success');
+      });
+      setLoading(btn, false);
+    });
+
+    document.getElementById('btn-profile-change-password').addEventListener('click', async () => {
+      const btn = document.getElementById('btn-profile-change-password');
+      setLoading(btn, true);
+      await submitPasswordChange(
+        'profile-cp-current',
+        'profile-cp-new',
+        'profile-cp-confirm',
+        'alert-app',
+        () => {
+          document.getElementById('profile-cp-current').value = '';
+          document.getElementById('profile-cp-new').value = '';
+          document.getElementById('profile-cp-confirm').value = '';
+          hideChangePasswordOverlay();
+        }
+      );
       setLoading(btn, false);
     });
 
@@ -407,19 +571,25 @@ const APP_VERSION = '2026-07-10.2';
     });
 
     // Quiz
+    function applyQuizData(quiz) {
+      currentQuestionIndex = 0;
+      selectedAnswers = {};
+      currentQuiz = quiz;
+      if (quiz.language && quiz.language !== getLanguage()) {
+        setLanguage(quiz.language);
+        syncLanguageSelect();
+      }
+      document.getElementById('quiz-loading').classList.add('hidden');
+      document.getElementById('quiz-content').classList.remove('hidden');
+      renderQuiz(quiz);
+    }
+
     async function loadQuiz() {
       document.getElementById('quiz-loading').classList.remove('hidden');
       document.getElementById('quiz-content').classList.add('hidden');
       try {
         const res = await API.call('quiz', { token: currentToken, language: getLanguage() });
-        currentQuestionIndex = 0;
-        selectedAnswers = {};
-        currentQuiz = res.quiz;
-        if (currentQuiz.language && currentQuiz.language !== getLanguage()) {
-          setLanguage(currentQuiz.language);
-          syncLanguageSelect();
-        }
-        renderQuiz(currentQuiz);
+        applyQuizData(res.quiz);
       } catch (err) {
         if (err.message && err.message.includes('Session')) {
           clearSession();
@@ -556,13 +726,45 @@ const APP_VERSION = '2026-07-10.2';
       container.classList.remove('hidden');
     }
 
+    function normalizeQuestionOptions(options) {
+      const result = { A: '', B: '', C: '', D: '' };
+      if (!options) return result;
+      if (typeof options === 'string') {
+        try { options = JSON.parse(options); } catch (e) { return result; }
+      }
+      if (Array.isArray(options)) {
+        result.A = String(options[0] ?? '');
+        result.B = String(options[1] ?? '');
+        result.C = String(options[2] ?? '');
+        result.D = String(options[3] ?? '');
+        return result;
+      }
+      const keyMap = {
+        A: ['A', 'a', 'option_a', 'optionA', '0'],
+        B: ['B', 'b', 'option_b', 'optionB', '1'],
+        C: ['C', 'c', 'option_c', 'optionC', '2'],
+        D: ['D', 'd', 'option_d', 'optionD', '3']
+      };
+      ['A', 'B', 'C', 'D'].forEach(letter => {
+        for (const key of keyMap[letter]) {
+          const val = options[key];
+          if (val !== undefined && val !== null && String(val).trim() !== '') {
+            result[letter] = String(val);
+            break;
+          }
+        }
+      });
+      return result;
+    }
+
     function renderQuestion(q, num, locked, userAnswer) {
       let html = '<div class="question-card">';
       html += '<div class="question-num">Question ' + num + '</div>';
       html += '<div class="question-text">' + escapeHtml(q.question) + '</div>';
       html += '<div class="options">';
+      const opts = normalizeQuestionOptions(q.options);
       ['A', 'B', 'C', 'D'].forEach(letter => {
-        const text = q.options[letter];
+        const text = opts[letter];
         if (!text) return;
         let cls = 'option' + (locked ? ' locked' : '');
         if (locked) {
