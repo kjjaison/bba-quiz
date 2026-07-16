@@ -42,7 +42,7 @@ var CONFIG = {
   SCHEDULE_START_DATE: '2026-07-08',
 
   // Bump on each release — keep in sync with mobile/lib/config/app_config.dart appVersion
-  APP_VERSION: '2026-07-14.9',
+  APP_VERSION: '2026-07-16.5',
 
   // Quiz question languages (sheet per language, same quiz_id across sheets)
   DEFAULT_LANGUAGE: 'en',
@@ -67,8 +67,8 @@ var CONFIG = {
   FIRESTORE_SYNC_URL: '',
   SYNC_SECRET: '',
 
-  // Quiz content: firestore (fast), sheet (legacy), auto (firestore when configured)
-  QUIZ_DATA_SOURCE: 'auto',
+  // Quiz content: firestore (primary), sheet (standby), auto (firestore when configured)
+  QUIZ_DATA_SOURCE: 'firestore',
 
   // Scoring
   POINTS_PER_CORRECT: 1,
@@ -125,6 +125,12 @@ function getSheet_(name) {
 }
 
 var SHEET_CACHE_TTL_SEC = 90;
+var SUBMISSION_SNAPSHOT_CACHE_SEC = 45;
+var SUBMISSION_LOOKUP_CACHE_SEC = 60;
+var SCHEDULE_CACHE_TTL_SEC = 300;
+var SESSION_USER_CACHE_SEC = 300;
+var QUIZ_SOURCE_CACHE_SEC = 600;
+var SHEET_ANSWERS_CACHE_SEC = 300;
 
 /** Cached sheet read — avoids repeated getDataRange() calls within a request or across warm instances. */
 function getSheetData_(name) {
@@ -148,7 +154,11 @@ function getSheetData_(name) {
 }
 
 function invalidateSheetCache_(name) {
-  CacheService.getScriptCache().remove('sh:' + name);
+  var cache = CacheService.getScriptCache();
+  cache.remove('sh:' + name);
+  if (name === CONFIG.SHEETS.SUBMISSIONS) {
+    cache.remove('subsnap:v1');
+  }
 }
 
 /** Show alert in Sheet UI, or log to Execution log when run from editor. */

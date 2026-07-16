@@ -1,19 +1,30 @@
 # Firestore hybrid on Spark (free plan)
 
-Use **Firestore** as the app’s quiz database without upgrading to **Blaze**. Sync runs entirely from **Apps Script** — no Cloud Functions.
+**Firestore is primary.** Google Sheet is standby (backup) for runtime data, and the **authoring** place for questions/answers.
 
 ```mermaid
 flowchart LR
-  Admin[Admin edits Google Sheet]
-  GAS[Apps Script sync]
-  FS[(Firestore)]
+  Admin[Admin edits Questions in Sheet]
+  Manual[Manual sync]
+  FS[(Firestore primary)]
+  Backup[15-min backup]
+  Sheet[Sheet standby]
   App[Web / Mobile]
   API[Apps Script API]
-  Admin --> GAS
-  GAS -->|REST API| FS
+  Admin -->|questions + answers| Manual
+  Manual -->|Sheet → FS| FS
+  FS -->|users / submissions / sessions| Backup
+  Backup --> Sheet
   App -->|quiz content| FS
-  App -->|login, submit| API
+  App -->|login / submit| API
+  API -->|dual-write| FS
+  API -->|live + standby| Sheet
 ```
+
+| Data | Direction | When |
+|------|-----------|------|
+| Questions + answers (+ schedule) | **Sheet → Firestore** | **Manual** only |
+| Users, submissions, sessions | **Firestore → Sheet** | Every **15 minutes** (standby) |
 
 ---
 
@@ -48,11 +59,9 @@ firebase deploy --only firestore
 
 ### 3. Add your Google account to the Firebase project
 
-Your Apps Script runs **as you**, so you need permission to write Firestore:
-
 1. Firebase Console → **Project settings → Users and permissions**
 2. **Add member** → your email (same account that owns/edits the Sheet)
-3. Role: **Editor** (or at minimum **Cloud Datastore User** in [Google Cloud IAM](https://console.cloud.google.com/iam-admin/iam))
+3. Role: **Editor**
 
 ### 4. Settings sheet rows
 
@@ -60,35 +69,46 @@ Your Apps Script runs **as you**, so you need permission to write Firestore:
 |-----|-------|
 | `firebase_project_id` | `bbadublin-quiz` |
 | `firestore_auth_mode` | `user` |
+| `quiz_data_source` | `firestore` |
 
 ### 5. Copy Apps Script files
 
 Copy into your Apps Script project:
 
-- `gas/appsscript.json` (adds Firestore OAuth scope — **important**)
+- `gas/appsscript.json`
 - `gas/FirestoreRest.gs`
 - `gas/FirestoreSync.gs`
-
-After updating `appsscript.json`, Google will ask you to **re-authorize** the script.
+- `gas/FirestoreRuntime.gs`
+- `gas/FirestoreBackup.gs`
+- Updated `Setup.gs`, `Quiz.gs`, `Auth.gs`, `Config.gs`
 
 ### 6. Authorize Firebase access
 
-In the Google Sheet:
-
 **BBA Quiz → Authorize Firebase access**
 
-Approve the new permission when prompted (access to Cloud Datastore / Firestore).
+### 7. Sync questions (manual)
 
-### 7. Test & sync
+**BBA Quiz → Sync questions to Firestore (manual)**
 
-**BBA Quiz → Test Firebase connection**  
-**BBA Quiz → Sync quiz data to Firestore**
+Edit questions in the Sheet, then run this after each content update. There is **no** auto sync for questions.
 
-### 8. Optional: 15-minute auto-sync
+### 8. Migrate runtime data (once)
 
-**BBA Quiz → Install 15-min Firestore sync (Apps Script)**
+**BBA Quiz → Migrate runtime data to Firestore**
 
-The trigger runs as **your account** — keep Editor access on the Firebase project.
+Copies existing Users / Submissions / Sessions into Firestore.
+
+### 9. Install 15-minute standby backup
+
+**BBA Quiz → Install 15-min Firestore → Sheet backup**
+
+This:
+- Removes any old Sheet → Firestore auto-sync triggers
+- Backs up Users / Submissions / Sessions from Firestore → Sheet every 15 minutes
+
+To stop all auto jobs: **Remove auto sync / backup triggers**
+
+Run **Backup Firestore → Sheet now** anytime to refresh the standby copy immediately.
 
 ---
 
@@ -110,6 +130,7 @@ Skip this section if key creation is blocked.
 |-----|-------|
 | `firebase_project_id` | `bbadublin-quiz` |
 | `firestore_auth_mode` | `service_account` |
+| `quiz_data_source` | `firestore` |
 
 ---
 
@@ -119,15 +140,11 @@ Skip this section if key creation is blocked.
 2. Project **bbadublin-quiz**
 3. **Build → Firestore Database → Data**
 
-| Collection | Example doc |
-|------------|-------------|
-| `questions` | `en_quiz-001_1` |
-| `answerKeys` | `en_quiz-001_1` |
-| `schedule` | `2026-07-14` |
-| `quizzes` | `quiz-001` |
-| `syncMeta` | `latest` |
-
-Edit questions in the **Google Sheet**, then sync. Use the Console to inspect data.
+| Collection | Source of truth | Sync |
+|------------|-----------------|------|
+| `questions` / `answerKeys` | Sheet (authoring) | Manual Sheet → FS |
+| `schedule` / `quizzes` | Sheet (with questions sync) | Manual Sheet → FS |
+| `users` / `submissions` / `sessions` | Firestore (runtime) | 15-min FS → Sheet standby |
 
 ---
 
@@ -135,44 +152,35 @@ Edit questions in the **Google Sheet**, then sync. Use the Console to inspect da
 
 | Error | Fix |
 |-------|-----|
-| Key creation not allowed | Use `firestore_auth_mode` = `user` (see above) |
-| Could not get user OAuth token | Run **Authorize Firebase access**; approve permissions |
-| PERMISSION_DENIED | Add your Google account as **Editor** on Firebase project |
-| Firestore commit failed | Enable **Cloud Firestore API** in Google Cloud Console → APIs |
-| Scheduled sync fails | Re-run **Authorize Firebase access** as the user who installed the trigger |
-| Quiz empty after sync | Run sync again; check `questions` collection in Firebase Console |
-| Students see sheet fallback | Web app runs as deployer — deployer must **Authorize Firebase access** |
+| Key creation not allowed | Use `firestore_auth_mode` = `user` |
+| Could not get user OAuth token | Run **Authorize Firebase access** |
+| PERMISSION_DENIED | Add your Google account as **Editor** on Firebase |
+| Exceeded maximum execution time | **Continue Firestore sync** |
+| Old auto sync still running | **Remove auto sync / backup triggers**, then install the backup trigger |
+| Students see sheet fallback | Deployer must **Authorize Firebase access**; set `quiz_data_source` = `firestore` |
 
 ---
 
-## Quiz load from Firestore (automatic)
-
-When `firebase_project_id` is set, the app reads **schedule + questions from Firestore** (faster). Login/submit still use the Sheet.
+## Quiz load
 
 | Settings `quiz_data_source` | Behaviour |
 |-----------------------------|-----------|
-| `auto` (default) | Firestore when configured, else Sheet |
-| `firestore` | Firestore only |
-| `sheet` | Sheet only |
+| `firestore` (default) | Firestore primary |
+| `auto` | Firestore when configured |
+| `sheet` | Sheet standby only |
 
-Quiz API responses include `"dataSource": "firestore"` when Firestore was used.
+### Runtime (login / submit)
 
----
+After **Migrate runtime data to Firestore**, login and submit read **Users / Sessions / Submissions from Firestore first** (direct document lookups). Sheet is dual-written as standby and refreshed by the 15-minute backup.
 
-## Spark vs Blaze sync
+| Action | Fast path |
+|--------|-----------|
+| Password login | `users/{emailId}` get |
+| Session check | `sessions/{tokenId}` get + cached profile |
+| Quiz lock / submit check | `submissions/{email_date}` get |
 
-| Method | Plan | Auth |
-|--------|------|------|
-| **Apps Script user OAuth** | Spark | Your Google account |
-| Apps Script service account | Spark | JSON key (if org allows) |
-| Cloud Function URL | Blaze | `firestore_sync_url` in Settings |
-
----
-
-## Free tier limits
-
-Firestore on Spark is enough for a church quiz app (~50K reads / 20K writes per day).
+OTP codes still use the OTP sheet (short-lived).
 
 ---
 
-See also: [FIRESTORE-HYBRID.md](./FIRESTORE-HYBRID.md) for the full schema.
+See also: [FIRESTORE-HYBRID.md](./FIRESTORE-HYBRID.md)

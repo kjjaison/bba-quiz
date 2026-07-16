@@ -162,21 +162,20 @@ exports.syncSheetToFirestore = onRequest(
   }
 );
 
-/** Automatic sync every 15 minutes (Europe/Dublin). */
+/** Automatic Sheet → Firestore sync disabled. Questions sync is manual only. */
 exports.syncSheetToFirestoreScheduled = onSchedule(
   {
     schedule: "every 15 minutes",
     timeZone: "Europe/Dublin",
     region: FUNCTION_REGION,
-    timeoutSeconds: 300,
-    memory: "512MiB",
+    timeoutSeconds: 60,
+    memory: "256MiB",
   },
   async () => {
-    if (!readSyncSecret() || !readSpreadsheetId()) {
-      console.warn("Scheduled sync skipped: missing SYNC_SECRET or SPREADSHEET_ID.");
-      return;
-    }
-    const result = await runSheetToFirestoreSync();
-    console.log("Scheduled sync complete:", JSON.stringify(result));
+    console.warn(
+      "Sheet → Firestore scheduled sync is disabled. " +
+      "Sync questions manually from Apps Script. " +
+      "Use Apps Script 'Install 15-min Firestore → Sheet backup' for runtime standby."
+    );
   }
 );

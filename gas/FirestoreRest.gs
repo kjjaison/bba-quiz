@@ -141,6 +141,13 @@ function encodeFirestoreValue_(value) {
     }
     return { doubleValue: value };
   }
+  if (Object.prototype.toString.call(value) === '[object Array]') {
+    var values = [];
+    for (var i = 0; i < value.length; i++) {
+      values.push(encodeFirestoreValue_(value[i]));
+    }
+    return { arrayValue: { values: values } };
+  }
   if (typeof value === 'object') {
     var fields = {};
     for (var key in value) {
@@ -171,6 +178,13 @@ function decodeFirestoreValue_(valueObj) {
   if ('booleanValue' in valueObj) return valueObj.booleanValue;
   if ('timestampValue' in valueObj) return valueObj.timestampValue;
   if ('nullValue' in valueObj) return null;
+  if (valueObj.arrayValue && valueObj.arrayValue.values) {
+    var arr = [];
+    for (var i = 0; i < valueObj.arrayValue.values.length; i++) {
+      arr.push(decodeFirestoreValue_(valueObj.arrayValue.values[i]));
+    }
+    return arr;
+  }
   if (valueObj.mapValue && valueObj.mapValue.fields) {
     var map = {};
     var inner = valueObj.mapValue.fields;
@@ -249,20 +263,77 @@ function listFirestoreCollection_(collectionId) {
   return docs;
 }
 
-function deleteStaleFirestoreDocs_(collectionId, syncBatchId) {
-  var docs = listFirestoreCollection_(collectionId);
-  var deletes = [];
+function shouldPruneStaleFirestore_() {
+  var setting = String(getSetting_('firestore_sync_prune_stale') || '').toLowerCase();
+  return setting === 'true' || setting === '1' || setting === 'yes';
+}
 
-  for (var i = 0; i < docs.length; i++) {
-    var fields = docs[i].fields || {};
-    var docBatch = fields.syncBatchId ? decodeFirestoreValue_(fields.syncBatchId) : '';
-    if (docBatch !== syncBatchId) {
-      deletes.push({ delete: docs[i].name });
+function queryStaleFirestoreDocNames_(collectionId, syncBatchId, limit) {
+  var token = getFirestoreAccessToken_();
+  var projectId = getFirebaseProjectId_();
+  var url = 'https://firestore.googleapis.com/v1/projects/' + projectId +
+    '/databases/(default)/documents:runQuery';
+
+  var response = UrlFetchApp.fetch(url, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { Authorization: 'Bearer ' + token },
+    payload: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId: collectionId }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: 'syncBatchId' },
+            op: 'NOT_EQUAL',
+            value: { stringValue: String(syncBatchId) }
+          }
+        },
+        limit: limit || 300
+      }
+    }),
+    muteHttpExceptions: true
+  });
+
+  if (response.getResponseCode() >= 300) {
+    throw new Error('Firestore stale query failed for ' + collectionId + ': ' + response.getContentText());
+  }
+
+  var rows = JSON.parse(response.getContentText());
+  var names = [];
+  for (var i = 0; i < rows.length; i++) {
+    if (rows[i].document && rows[i].document.name) {
+      names.push(rows[i].document.name);
     }
+  }
+  return names;
+}
+
+/** Delete up to maxDeletes stale docs per call (for resumable sync). */
+function deleteStaleFirestoreDocsChunk_(collectionId, syncBatchId, maxDeletes) {
+  if (!shouldPruneStaleFirestore_()) return 0;
+
+  var names = queryStaleFirestoreDocNames_(collectionId, syncBatchId, maxDeletes || 300);
+  if (!names.length) return 0;
+
+  var deletes = [];
+  for (var i = 0; i < names.length; i++) {
+    deletes.push({ delete: names[i] });
   }
 
   firestoreCommitWrites_(deletes);
   return deletes.length;
+}
+
+function deleteStaleFirestoreDocs_(collectionId, syncBatchId) {
+  var total = 0;
+  var removed;
+
+  do {
+    removed = deleteStaleFirestoreDocsChunk_(collectionId, syncBatchId, 300);
+    total += removed;
+  } while (removed > 0 && firestoreSyncHasTimeRemaining_());
+
+  return total;
 }
 
 /** Run once after updating appsscript.json — triggers OAuth consent for Firestore. */
@@ -326,43 +397,44 @@ function firestoreStringFilter_(fieldPath, value) {
   };
 }
 
-function getFirestoreDocument_(collectionId, docId) {
-  var token = getFirestoreAccessToken_();
-  var projectId = getFirebaseProjectId_();
-  var url = 'https://firestore.googleapis.com/v1/projects/' + projectId +
-    '/databases/(default)/documents/' + collectionId + '/' + encodeURIComponent(docId);
+function firestoreAuthHeaders_(token) {
+  return { Authorization: 'Bearer ' + token };
+}
 
-  var response = UrlFetchApp.fetch(url, {
-    headers: { Authorization: 'Bearer ' + token },
+function buildFirestoreGetRequest_(collectionId, docId, token, projectId) {
+  return {
+    url: 'https://firestore.googleapis.com/v1/projects/' + projectId +
+      '/databases/(default)/documents/' + collectionId + '/' + encodeURIComponent(docId),
+    headers: firestoreAuthHeaders_(token),
     muteHttpExceptions: true
-  });
+  };
+}
 
-  if (response.getResponseCode() === 404) return null;
-  if (response.getResponseCode() >= 300) {
-    throw new Error('Firestore get ' + collectionId + '/' + docId + ' failed: ' + response.getContentText());
+function buildFirestoreQueryRequest_(structuredQuery, token, projectId) {
+  return {
+    url: 'https://firestore.googleapis.com/v1/projects/' + projectId +
+      '/databases/(default)/documents:runQuery',
+    method: 'post',
+    contentType: 'application/json',
+    headers: firestoreAuthHeaders_(token),
+    payload: JSON.stringify({ structuredQuery: structuredQuery }),
+    muteHttpExceptions: true
+  };
+}
+
+function parseFirestoreGetResponse_(response) {
+  var code = response.getResponseCode();
+  if (code === 404) return null;
+  if (code >= 300) {
+    throw new Error('Firestore get failed: ' + response.getContentText());
   }
-
   return decodeFirestoreDocument_(JSON.parse(response.getContentText()));
 }
 
-function runFirestoreQuery_(structuredQuery) {
-  var token = getFirestoreAccessToken_();
-  var projectId = getFirebaseProjectId_();
-  var url = 'https://firestore.googleapis.com/v1/projects/' + projectId +
-    '/databases/(default)/documents:runQuery';
-
-  var response = UrlFetchApp.fetch(url, {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { Authorization: 'Bearer ' + token },
-    payload: JSON.stringify({ structuredQuery: structuredQuery }),
-    muteHttpExceptions: true
-  });
-
+function parseFirestoreQueryResponse_(response) {
   if (response.getResponseCode() >= 300) {
     throw new Error('Firestore query failed: ' + response.getContentText());
   }
-
   var rows = JSON.parse(response.getContentText());
   var docs = [];
   for (var i = 0; i < rows.length; i++) {
@@ -373,9 +445,9 @@ function runFirestoreQuery_(structuredQuery) {
   return docs;
 }
 
-function queryFirestoreByQuizAndLanguage_(collectionId, quizId, language) {
-  return runFirestoreQuery_({
-    from: [{ collectionId: collectionId }],
+function quizQuestionsQuery_(quizId, language) {
+  return {
+    from: [{ collectionId: 'questions' }],
     where: {
       compositeFilter: {
         op: 'AND',
@@ -386,7 +458,57 @@ function queryFirestoreByQuizAndLanguage_(collectionId, quizId, language) {
       }
     },
     orderBy: [{ field: { fieldPath: 'questionNum' }, direction: 'ASCENDING' }]
+  };
+}
+
+function quizAnswerKeysQuery_(quizId, language) {
+  return {
+    from: [{ collectionId: 'answerKeys' }],
+    where: {
+      compositeFilter: {
+        op: 'AND',
+        filters: [
+          firestoreStringFilter_('quizId', quizId),
+          firestoreStringFilter_('language', language)
+        ]
+      }
+    },
+    orderBy: [{ field: { fieldPath: 'questionNum' }, direction: 'ASCENDING' }]
+  };
+}
+
+function getFirestoreDocument_(collectionId, docId) {
+  var token = getFirestoreAccessToken_();
+  var projectId = getFirebaseProjectId_();
+  var response = UrlFetchApp.fetch(
+    buildFirestoreGetRequest_(collectionId, docId, token, projectId).url,
+    {
+      headers: firestoreAuthHeaders_(token),
+      muteHttpExceptions: true
+    }
+  );
+  return parseFirestoreGetResponse_(response);
+}
+
+function runFirestoreQuery_(structuredQuery) {
+  var token = getFirestoreAccessToken_();
+  var projectId = getFirebaseProjectId_();
+  var req = buildFirestoreQueryRequest_(structuredQuery, token, projectId);
+  var response = UrlFetchApp.fetch(req.url, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: req.headers,
+    payload: req.payload,
+    muteHttpExceptions: true
   });
+  return parseFirestoreQueryResponse_(response);
+}
+
+function queryFirestoreByQuizAndLanguage_(collectionId, quizId, language) {
+  if (collectionId === 'answerKeys') {
+    return runFirestoreQuery_(quizAnswerKeysQuery_(quizId, language));
+  }
+  return runFirestoreQuery_(quizQuestionsQuery_(quizId, language));
 }
 
 function getFirestoreScheduleForDate_(date) {
@@ -402,21 +524,59 @@ function loadQuestionsFromFirestore_(quizId, language, includeAnswers) {
     return JSON.parse(cached);
   }
 
-  var docs = queryFirestoreByQuizAndLanguage_('questions', quizId, lang);
+  // Single-doc pack (much faster than runQuery) — self-heals after first query load
+  try {
+    var pack = getFirestoreDocument_('quizPacks', lang + '_' + quizId);
+    if (pack && pack.questions && pack.questions.length) {
+      var packed = pack.questions.slice();
+      if (includeAnswers) {
+        var keys = pack.answerKeys || {};
+        attachAnswerMapToQuestions_(packed, keys);
+        try {
+          cache.put('ak:' + lang + ':' + quizId, JSON.stringify(keys), SHEET_ANSWERS_CACHE_SEC || 300);
+        } catch (e) {}
+      }
+      try {
+        var packedJson = JSON.stringify(packed);
+        if (packedJson.length < 95000) {
+          cache.put(cacheKey, packedJson, 600);
+        }
+      } catch (e) {}
+      return packed;
+    }
+  } catch (err) {
+    Logger.log('quizPacks read failed: ' + (err.message || err));
+  }
+
+  var token = getFirestoreAccessToken_();
+  var projectId = getFirebaseProjectId_();
+  var requests = [
+    buildFirestoreQueryRequest_(quizQuestionsQuery_(quizId, lang), token, projectId)
+  ];
+  if (includeAnswers) {
+    requests.push(buildFirestoreQueryRequest_(quizAnswerKeysQuery_(quizId, lang), token, projectId));
+  } else {
+    // Prefetch answer keys in parallel for faster submit later
+    requests.push(buildFirestoreQueryRequest_(quizAnswerKeysQuery_(quizId, lang), token, projectId));
+  }
+
+  var responses = UrlFetchApp.fetchAll(requests);
+  var docs = parseFirestoreQueryResponse_(responses[0]);
   if (!docs.length && lang !== 'en') {
     docs = queryFirestoreByQuizAndLanguage_('questions', quizId, 'en');
   }
 
   var answerMap = {};
-  if (includeAnswers && docs.length) {
-    var keys = queryFirestoreByQuizAndLanguage_('answerKeys', quizId, lang);
-    if (!keys.length && lang !== 'en') {
-      keys = queryFirestoreByQuizAndLanguage_('answerKeys', quizId, 'en');
-    }
-    for (var k = 0; k < keys.length; k++) {
-      answerMap[String(keys[k].questionNum)] = keys[k].correctAnswer;
-    }
+  var keyDocs = parseFirestoreQueryResponse_(responses[1]);
+  if (!keyDocs.length && lang !== 'en') {
+    keyDocs = queryFirestoreByQuizAndLanguage_('answerKeys', quizId, 'en');
   }
+  for (var k = 0; k < keyDocs.length; k++) {
+    answerMap[String(keyDocs[k].questionNum)] = normalizeCorrectAnswer_(keyDocs[k].correctAnswer);
+  }
+  try {
+    cache.put('ak:' + lang + ':' + quizId, JSON.stringify(answerMap), SHEET_ANSWERS_CACHE_SEC || 300);
+  } catch (e) {}
 
   var questions = [];
   for (var i = 0; i < docs.length; i++) {
@@ -428,17 +588,54 @@ function loadQuestionsFromFirestore_(quizId, language, includeAnswers) {
       options: normalizeQuestionOptions_(doc.options || {})
     };
     if (includeAnswers) {
-      q.correctAnswer = answerMap[String(doc.questionNum)] || '';
+      q.correctAnswer = normalizeCorrectAnswer_(answerMap[String(doc.questionNum)] || '');
     }
     questions.push(q);
   }
 
   questions.sort(function(a, b) { return a.id - b.id; });
 
+  if (includeAnswers && questions.length) {
+    var missing = false;
+    for (var m = 0; m < questions.length; m++) {
+      if (!questions[m].correctAnswer) {
+        missing = true;
+        break;
+      }
+    }
+    if (missing) {
+      attachCorrectAnswersToQuestions_(questions, quizId, lang);
+    }
+  }
+
+  // Self-heal: store pack for next load (1 get instead of query)
+  try {
+    var packQuestions = questions.map(function(item) {
+      return {
+        id: item.id,
+        question: item.question,
+        chapter: item.chapter,
+        options: item.options
+      };
+    });
+    firestoreCommitWrites_([buildFirestoreUpdateWrite_('quizPacks', lang + '_' + quizId, {
+      quizId: String(quizId),
+      language: lang,
+      questions: packQuestions,
+      answerKeys: answerMap,
+      updatedAt: new Date().toISOString()
+    })]);
+  } catch (e) {
+    Logger.log('quizPacks write failed: ' + (e.message || e));
+  }
+
   try {
     var json = JSON.stringify(questions);
     if (json.length < 95000) {
-      cache.put(cacheKey, json, 300);
+      cache.put(cacheKey, json, 600);
+      if (!includeAnswers) {
+        cache.put('fq:' + lang + ':' + quizId + ':q', json, 600);
+      }
     }
   } catch (e) {}
 

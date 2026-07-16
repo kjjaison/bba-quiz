@@ -167,26 +167,25 @@ curl -X POST "https://europe-west1-YOUR_PROJECT.cloudfunctions.net/syncSheetToFi
   -d "{}"
 ```
 
-Automatic sync runs **every 15 minutes** via Cloud Scheduler (`syncSheetToFirestoreScheduled`).
+Automatic Sheet → Firestore sync is **disabled**. Questions sync is **manual only**.
+
+Runtime standby: Apps Script **Install 15-min Firestore → Sheet backup** (Users / Submissions / Sessions).
 
 ---
 
-## What stays on the Sheet (for now)
+## What lives where
 
-| Sheet tab | Firestore | App reads |
-|-----------|-----------|-----------|
-| Questions | `questions` + `answerKeys` | Firestore (after app migration) |
-| QuestionsMalayalam | `questions` (`language: ml`) | Firestore |
-| DailySchedule | `schedule` | Firestore |
-| Users | — | Apps Script |
-| Submissions | — | Apps Script |
-| Sessions | — | Apps Script |
+| Data | Primary | Standby / authoring | Sync |
+|------|---------|---------------------|------|
+| Questions + answers | Firestore (runtime) | Sheet (authoring) | Manual Sheet → FS |
+| Schedule / quizzes | Firestore (runtime) | Sheet (with questions sync) | Manual Sheet → FS |
+| Users / Submissions / Sessions | Firestore (dual-write) | Sheet (15-min backup) | FS → Sheet every 15 min |
 
 ---
 
-## Next step (app reads Firestore)
+## Next step (optional)
 
-Point Cloud Function `api` quiz action at Firestore instead of Apps Script for `action=quiz`. Login/submit can stay on Apps Script until Firebase Auth is added.
+Point Cloud Function `api` quiz action at Firestore instead of Apps Script for `action=quiz`. Auth can later move fully off Sheet reads once Firestore users are trusted.
 
 ---
 

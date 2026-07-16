@@ -1,4 +1,4 @@
-const APP_VERSION = '2026-07-14.9';
+const APP_VERSION = '2026-07-16.3';
     const VERSION_KEY = 'bba_quiz_app_version';
 
     (function enforceAppVersion() {
@@ -339,6 +339,9 @@ const APP_VERSION = '2026-07-14.9';
     function clearSession() {
       currentToken = null;
       currentUser = null;
+      currentQuiz = null;
+      selectedAnswers = {};
+      currentQuestionIndex = 0;
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_KEY);
       sessionStorage.removeItem(SESSION_TOKEN_KEY);
@@ -417,12 +420,18 @@ const APP_VERSION = '2026-07-14.9';
         showChangePasswordOverlay(true);
         return;
       }
+      if (currentUser && currentUser.mustChangePassword === false) {
+        return;
+      }
       try {
         const res = await API.call('profile', { token: currentToken });
         if (res.profile && res.profile.mustChangePassword) {
           currentUser.mustChangePassword = true;
           persistCurrentUser();
           showChangePasswordOverlay(true);
+        } else if (currentUser) {
+          currentUser.mustChangePassword = false;
+          persistCurrentUser();
         }
       } catch (err) {
         // ignore — quiz can still load
@@ -642,6 +651,9 @@ const APP_VERSION = '2026-07-14.9';
     document.getElementById('btn-load-quiz-date').addEventListener('click', () => {
       const input = document.getElementById('test-quiz-date');
       if (input && input.value) setStoredTestDate(input.value);
+      currentQuiz = null;
+      selectedAnswers = {};
+      currentQuestionIndex = 0;
       if (!document.getElementById('app-screen').classList.contains('hidden')) {
         loadQuiz();
       }
@@ -649,6 +661,9 @@ const APP_VERSION = '2026-07-14.9';
 
     document.getElementById('test-quiz-date').addEventListener('change', e => {
       if (e.target.value) setStoredTestDate(e.target.value);
+      currentQuiz = null;
+      selectedAnswers = {};
+      currentQuestionIndex = 0;
     });
 
     document.getElementById('btn-reset-cache').addEventListener('click', e => {
@@ -663,8 +678,12 @@ const APP_VERSION = '2026-07-14.9';
     }
 
     function mergeSubmittedQuizState(incoming, existing) {
+      if (!incoming) return existing || null;
       if (!isQuizSubmitted(existing)) return incoming;
       if (isQuizSubmitted(incoming)) return incoming;
+      // Do not carry "completed" state across different quiz days or quizzes.
+      if (existing.date && incoming.date && existing.date !== incoming.date) return incoming;
+      if (existing.quizId && incoming.quizId && existing.quizId !== incoming.quizId) return incoming;
       return Object.assign({}, incoming, {
         submitted: true,
         score: existing.score,
@@ -824,7 +843,7 @@ const APP_VERSION = '2026-07-14.9';
         html += '</div>';
 
         (quiz.questions || []).forEach((q, idx) => {
-          const userAns = (quiz.answers || {})[String(q.id)] || '';
+          const userAns = getUserAnswerForQuestion(quiz.answers, q);
           html += renderQuestion(q, idx + 1, true, userAns);
         });
 
@@ -868,24 +887,46 @@ const APP_VERSION = '2026-07-14.9';
       return result;
     }
 
+    function normalizeAnswerLetter(value) {
+      const s = String(value || '').trim().toLowerCase();
+      if (!s) return '';
+      if (s === 'option_a' || s === 'a') return 'A';
+      if (s === 'option_b' || s === 'b') return 'B';
+      if (s === 'option_c' || s === 'c') return 'C';
+      if (s === 'option_d' || s === 'd') return 'D';
+      return String(value).trim().toUpperCase().charAt(0);
+    }
+
+    function getUserAnswerForQuestion(answers, question) {
+      const map = answers || {};
+      const id = question.id;
+      return normalizeAnswerLetter(map[String(id)] || map[id] || '');
+    }
+
+    function quizHasReviewAnswers(quiz) {
+      return ((quiz && quiz.questions) || []).some(q => normalizeAnswerLetter(q.correctAnswer));
+    }
+
     function renderQuestion(q, num, locked, userAnswer) {
       let html = '<div class="question-card">';
       html += '<div class="question-num">Question ' + num + '</div>';
       html += '<div class="question-text">' + escapeHtml(q.question) + '</div>';
       html += '<div class="options">';
       const opts = normalizeQuestionOptions(q.options);
+      const correctLetter = normalizeAnswerLetter(q.correctAnswer);
+      const selectedLetter = normalizeAnswerLetter(userAnswer);
       ['A', 'B', 'C', 'D'].forEach(letter => {
         const text = opts[letter];
         if (!text) return;
         let cls = 'option' + (locked ? ' locked' : '');
         if (locked) {
-          if (letter === q.correctAnswer) cls += ' correct';
-          else if (letter === userAnswer && userAnswer !== q.correctAnswer) cls += ' incorrect';
+          if (correctLetter && letter === correctLetter) cls += ' correct';
+          else if (selectedLetter && letter === selectedLetter && letter !== correctLetter) cls += ' incorrect';
         }
-        if (!locked && userAnswer === letter) cls += ' selected';
+        if (!locked && selectedLetter === letter) cls += ' selected';
         html += '<label class="' + cls + '" data-qid="' + q.id + '" data-letter="' + letter + '">';
         html += '<input type="radio" name="q' + q.id + '" value="' + letter + '"' +
-          (userAnswer === letter ? ' checked' : '') + (locked ? ' disabled' : '') + '>';
+          (selectedLetter === letter ? ' checked' : '') + (locked ? ' disabled' : '') + '>';
         html += '<span class="option-label">' + letter + '</span>';
         html += '<span>' + escapeHtml(text) + '</span>';
         html += '</label>';
@@ -917,17 +958,27 @@ const APP_VERSION = '2026-07-14.9';
           language: getLanguage()
         }));
         const submittedAnswers = Object.assign({}, selectedAnswers);
-        const lockedQuiz = res.result.quiz || Object.assign({}, currentQuiz, {
+        const correctAnswers = (res.result && res.result.correctAnswers) ||
+          (res.result && res.result.quiz && res.result.quiz.correctAnswers) ||
+          {};
+        const mergedQuestions = (currentQuiz.questions || []).map(q => Object.assign({}, q, {
+          correctAnswer: normalizeAnswerLetter(
+            correctAnswers[String(q.id)] || q.correctAnswer || ''
+          )
+        }));
+        const lockedQuiz = Object.assign({}, currentQuiz, res.result.quiz || {}, {
           submitted: true,
           score: res.result.score,
           totalQuestions: res.result.totalQuestions,
-          answers: res.result.answers || submittedAnswers
+          answers: res.result.answers || submittedAnswers,
+          correctAnswers: correctAnswers,
+          questions: mergedQuestions.length ? mergedQuestions : (res.result.quiz && res.result.quiz.questions)
         });
         applyQuizData(lockedQuiz);
         showAlert('alert-app',
           'Quiz submitted! You scored ' + res.result.score + ' points (' + res.result.percentage + '%)' +
           (res.result.isPerfect ? ' — Perfect score! ⭐' : ''), 'success');
-        if (!isQuizSubmitted(res.result.quiz)) {
+        if (!quizHasReviewAnswers(lockedQuiz)) {
           loadQuiz();
         }
       } catch (err) {
@@ -1008,13 +1059,12 @@ const APP_VERSION = '2026-07-14.9';
     function initApp() {
       try {
         syncRememberCheckboxes();
-        loadAppConfig().finally(() => {
-          if (currentToken && currentUser) {
-            showApp();
-          } else {
-            showAuth();
-          }
-        });
+        if (currentToken && currentUser) {
+          showApp();
+        } else {
+          showAuth();
+        }
+        loadAppConfig();
       } catch (err) {
         showAuth();
         showAlert('alert-auth', err.message || 'Could not start app', 'error');

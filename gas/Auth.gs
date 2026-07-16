@@ -125,6 +125,17 @@ function setMustChangePassword_(email, mustChange) {
     if ((data[i][0] || '').toLowerCase() === email) {
       sheet.getRange(i + 1, USER_COL.MUST_CHANGE_PASSWORD + 1).setValue(!!mustChange);
       invalidateSheetCache_(CONFIG.SHEETS.USERS);
+      invalidateUserProfileCache_(email);
+      writeFirestoreUserProfile_({
+        email: email,
+        displayName: data[i][2],
+        totalScore: Number(data[i][6]) || 0,
+        totalQuizzes: Number(data[i][7]) || 0,
+        perfectScores: Number(data[i][8]) || 0,
+        streak: Number(data[i][9]) || 0,
+        mustChangePassword: !!mustChange,
+        passwordHash: data[i][1]
+      });
       return;
     }
   }
@@ -140,6 +151,17 @@ function updateUserPassword_(email, newPassword, invalidateSessions) {
     if ((data[i][0] || '').toLowerCase() === email) {
       sheet.getRange(i + 1, USER_COL.PASSWORD_HASH + 1).setValue(hash);
       invalidateSheetCache_(CONFIG.SHEETS.USERS);
+      invalidateUserProfileCache_(email);
+      writeFirestoreUserProfile_({
+        email: email,
+        displayName: data[i][2],
+        totalScore: Number(data[i][6]) || 0,
+        totalQuizzes: Number(data[i][7]) || 0,
+        perfectScores: Number(data[i][8]) || 0,
+        streak: Number(data[i][9]) || 0,
+        mustChangePassword: userMustChangePassword_(data[i]),
+        passwordHash: hash
+      });
       if (invalidateSessions !== false) {
         invalidateAllSessionsForUser_(email);
       }
@@ -174,6 +196,7 @@ function changePassword_(user, currentPassword, newPassword) {
       }
       sheet.getRange(i + 1, USER_COL.PASSWORD_HASH + 1).setValue(hashPassword_(newPassword));
       setMustChangePassword_(email, false);
+      invalidateUserProfileCache_(email);
       return { message: 'Password updated successfully', mustChangePassword: false };
     }
   }
@@ -290,11 +313,24 @@ function createSession_(email, rememberMe) {
   var token = generateToken_();
   var now = new Date();
   var expires = sessionExpiresAt_(now, remember);
-  var sheet = getSessionsSheet_();
 
-  sheet.appendRow([email, token, expires, now, remember]);
-  invalidateSheetCache_(CONFIG.SHEETS.SESSIONS);
-  pruneSessionsForUser_(email);
+  // Firestore only on login hot path — Sheet sessions refreshed by 15-min backup
+  writeFirestoreSession_({
+    email: email,
+    token: token,
+    expiresAt: expires,
+    createdAt: now,
+    rememberMe: remember
+  });
+
+  try {
+    var cache = CacheService.getScriptCache();
+    cache.put(
+      'sv:' + Utilities.base64EncodeWebSafe(token).substring(0, 80),
+      email,
+      180
+    );
+  } catch (e) {}
 
   return token;
 }
@@ -331,12 +367,47 @@ function pruneSessionsForUser_(email) {
   invalidateSheetCache_(CONFIG.SHEETS.SESSIONS);
 }
 
+function invalidateUserProfileCache_(email) {
+  if (!email) return;
+  CacheService.getScriptCache().remove('usr:' + String(email).toLowerCase());
+}
+
 function getUserProfileByEmail_(email) {
+  email = (email || '').toLowerCase();
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'usr:' + email;
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (e) {}
+  }
+
+  var fsUser = getFirestoreUserByEmail_(email);
+  if (fsUser) {
+    var fsProfile = {
+      row: null,
+      email: fsUser.email,
+      displayName: fsUser.displayName,
+      totalScore: fsUser.totalScore,
+      totalQuizzes: fsUser.totalQuizzes,
+      perfectScores: fsUser.perfectScores,
+      streak: fsUser.streak,
+      mustChangePassword: fsUser.mustChangePassword === true,
+      passwordHash: fsUser.passwordHash || '',
+      source: 'firestore'
+    };
+    try {
+      cache.put(cacheKey, JSON.stringify(fsProfile), SESSION_USER_CACHE_SEC);
+    } catch (e) {}
+    return fsProfile;
+  }
+
   var data = getSheetData_(CONFIG.SHEETS.USERS);
 
   for (var i = 1; i < data.length; i++) {
     if ((data[i][0] || '').toLowerCase() === email) {
-      return {
+      var profile = {
         row: i + 1,
         email: data[i][0],
         displayName: data[i][2],
@@ -344,8 +415,16 @@ function getUserProfileByEmail_(email) {
         totalQuizzes: Number(data[i][7]) || 0,
         perfectScores: Number(data[i][8]) || 0,
         streak: Number(data[i][9]) || 0,
-        mustChangePassword: userMustChangePassword_(data[i])
+        mustChangePassword: userMustChangePassword_(data[i]),
+        passwordHash: String(data[i][1] || ''),
+        source: 'sheet'
       };
+      try {
+        cache.put(cacheKey, JSON.stringify(profile), SESSION_USER_CACHE_SEC);
+      } catch (e) {}
+      // Warm Firestore for next login
+      writeFirestoreUserProfile_(profile);
+      return profile;
     }
   }
 
@@ -366,6 +445,10 @@ function registerUser_(email, password, displayName, rememberMe) {
     throw new Error('Display name is required');
   }
 
+  if (getFirestoreUserByEmail_(email)) {
+    throw new Error('An account with this email already exists');
+  }
+
   var sheet = getSheet_(CONFIG.SHEETS.USERS);
   var data = getSheetData_(CONFIG.SHEETS.USERS);
 
@@ -376,22 +459,39 @@ function registerUser_(email, password, displayName, rememberMe) {
   }
 
   var now = new Date();
+  var passwordHash = hashPassword_(password);
+
+  writeFirestoreUserProfile_({
+    email: email,
+    displayName: displayName,
+    totalScore: 0,
+    totalQuizzes: 0,
+    perfectScores: 0,
+    streak: 0,
+    mustChangePassword: false,
+    passwordHash: passwordHash
+  });
+
   var token = createSession_(email, rememberMe);
 
-  sheet.appendRow([
-    email,
-    hashPassword_(password),
-    displayName,
-    now,
-    '',  // legacy session_token (unused — see Sessions sheet)
-    '',  // legacy session_expires
-    0,
-    0,
-    0,
-    0,
-    false
-  ]);
-  invalidateSheetCache_(CONFIG.SHEETS.USERS);
+  try {
+    sheet.appendRow([
+      email,
+      passwordHash,
+      displayName,
+      now,
+      '',
+      '',
+      0,
+      0,
+      0,
+      0,
+      false
+    ]);
+    invalidateSheetCache_(CONFIG.SHEETS.USERS);
+  } catch (err) {
+    Logger.log('Sheet user standby write failed: ' + (err.message || err));
+  }
 
   return { email: email, displayName: displayName, token: token, mustChangePassword: false };
 }
@@ -402,20 +502,45 @@ function loginWithPassword_(email, password, rememberMe) {
     throw new Error('Email and password are required');
   }
 
+  var hash = hashPassword_(password);
+
+  var fsUser = getFirestoreUserByEmail_(email);
+  if (fsUser) {
+    if (!fsUser.passwordHash || fsUser.passwordHash !== hash) {
+      throw new Error('Invalid email or password');
+    }
+    var token = createSession_(email, rememberMe);
+    return {
+      email: fsUser.email,
+      displayName: fsUser.displayName,
+      token: token,
+      mustChangePassword: fsUser.mustChangePassword === true
+    };
+  }
+
   var sheet = getSheet_(CONFIG.SHEETS.USERS);
   var data = getSheetData_(CONFIG.SHEETS.USERS);
-  var hash = hashPassword_(password);
 
   for (var i = 1; i < data.length; i++) {
     if ((data[i][0] || '').toLowerCase() === email) {
       if (data[i][1] !== hash) {
         throw new Error('Invalid email or password');
       }
-      var token = createSession_(email, rememberMe);
+      writeFirestoreUserProfile_({
+        email: email,
+        displayName: data[i][2],
+        totalScore: Number(data[i][6]) || 0,
+        totalQuizzes: Number(data[i][7]) || 0,
+        perfectScores: Number(data[i][8]) || 0,
+        streak: Number(data[i][9]) || 0,
+        mustChangePassword: userMustChangePassword_(data[i]),
+        passwordHash: data[i][1]
+      });
+      var sheetToken = createSession_(email, rememberMe);
       return {
         email: data[i][0],
         displayName: data[i][2],
-        token: token,
+        token: sheetToken,
         mustChangePassword: userMustChangePassword_(data[i])
       };
     }
@@ -429,13 +554,14 @@ function requestOTP_(email) {
     throw new Error('Email is required');
   }
 
-  var usersSheet = getSheet_(CONFIG.SHEETS.USERS);
-  var users = getSheetData_(CONFIG.SHEETS.USERS);
-  var userExists = false;
-  for (var i = 1; i < users.length; i++) {
-    if ((users[i][0] || '').toLowerCase() === email) {
-      userExists = true;
-      break;
+  var userExists = !!getFirestoreUserByEmail_(email);
+  if (!userExists) {
+    var users = getSheetData_(CONFIG.SHEETS.USERS);
+    for (var i = 1; i < users.length; i++) {
+      if ((users[i][0] || '').toLowerCase() === email) {
+        userExists = true;
+        break;
+      }
     }
   }
   if (!userExists) {
@@ -501,11 +627,31 @@ function loginWithOTP_(email, otp, rememberMe) {
     throw new Error('Invalid or expired OTP');
   }
 
-  var usersSheet = getSheet_(CONFIG.SHEETS.USERS);
+  var fsUser = getFirestoreUserByEmail_(email);
+  if (fsUser) {
+    var fsToken = createSession_(email, rememberMe);
+    return {
+      email: fsUser.email,
+      displayName: fsUser.displayName,
+      token: fsToken,
+      mustChangePassword: fsUser.mustChangePassword === true
+    };
+  }
+
   var users = getSheetData_(CONFIG.SHEETS.USERS);
 
   for (var j = 1; j < users.length; j++) {
     if ((users[j][0] || '').toLowerCase() === email) {
+      writeFirestoreUserProfile_({
+        email: email,
+        displayName: users[j][2],
+        totalScore: Number(users[j][6]) || 0,
+        totalQuizzes: Number(users[j][7]) || 0,
+        perfectScores: Number(users[j][8]) || 0,
+        streak: Number(users[j][9]) || 0,
+        mustChangePassword: userMustChangePassword_(users[j]),
+        passwordHash: users[j][1]
+      });
       var token = createSession_(email, rememberMe);
       return {
         email: users[j][0],
@@ -536,6 +682,41 @@ function validateSession_(token) {
   }
 
   token = String(token).trim();
+  var cache = CacheService.getScriptCache();
+  var sessionCacheKey = 'sv:' + Utilities.base64EncodeWebSafe(token).substring(0, 80);
+  var cachedEmail = cache.get(sessionCacheKey);
+  if (cachedEmail) {
+    return getUserProfileByEmail_(cachedEmail);
+  }
+
+  var fsSession = getFirestoreSessionByToken_(token);
+  if (fsSession) {
+    if (!fsSession.expiresAt || fsSession.expiresAt < new Date()) {
+      deleteFirestoreSession_(token);
+      throw new Error('Session expired. Please log in again.');
+    }
+
+    if (CONFIG.SESSION_EXTEND_ON_USE) {
+      var extendKey = 'se:' + token.substring(0, 40);
+      if (!cache.get(extendKey)) {
+        var newExpiry = sessionExpiresAt_(new Date(), fsSession.rememberMe);
+        writeFirestoreSession_({
+          email: fsSession.email,
+          token: token,
+          expiresAt: newExpiry,
+          createdAt: fsSession.createdAt || new Date(),
+          rememberMe: fsSession.rememberMe
+        });
+        cache.put(extendKey, '1', 3600);
+      }
+    }
+
+    try {
+      cache.put(sessionCacheKey, fsSession.email, 180);
+    } catch (e) {}
+    return getUserProfileByEmail_(fsSession.email);
+  }
+
   var sessionsSheet = getSessionsSheet_();
   var data = getSheetData_(CONFIG.SHEETS.SESSIONS);
 
@@ -548,19 +729,30 @@ function validateSession_(token) {
         throw new Error('Session expired. Please log in again.');
       }
 
+      var remember = parseRememberMe_(data[i][SESSION_COL.REMEMBER]);
+      var email = (data[i][SESSION_COL.EMAIL] || '').toLowerCase();
+
+      writeFirestoreSession_({
+        email: email,
+        token: token,
+        expiresAt: expires,
+        createdAt: data[i][SESSION_COL.CREATED] || new Date(),
+        rememberMe: remember
+      });
+
       if (CONFIG.SESSION_EXTEND_ON_USE) {
-        var cache = CacheService.getScriptCache();
-        var extendKey = 'se:' + token.substring(0, 40);
-        if (!cache.get(extendKey)) {
-          var remember = parseRememberMe_(data[i][SESSION_COL.REMEMBER]);
+        var sheetExtendKey = 'se:' + token.substring(0, 40);
+        if (!cache.get(sheetExtendKey)) {
           sessionsSheet.getRange(i + 1, SESSION_COL.EXPIRES + 1)
             .setValue(sessionExpiresAt_(new Date(), remember));
           invalidateSheetCache_(CONFIG.SHEETS.SESSIONS);
-          cache.put(extendKey, '1', 3600);
+          cache.put(sheetExtendKey, '1', 3600);
         }
       }
 
-      var email = (data[i][SESSION_COL.EMAIL] || '').toLowerCase();
+      try {
+        cache.put(sessionCacheKey, email, 180);
+      } catch (e) {}
       return getUserProfileByEmail_(email);
     }
   }

@@ -62,14 +62,13 @@ function normalizeApiParams_(params) {
   return result;
 }
 
+function authResponse_(user) {
+  return { user: user };
+}
+
+/** @deprecated Prefer authResponse_ — quiz loads separately for faster sign-in. */
 function authResponseWithQuiz_(user, language, quizDate) {
-  var response = { user: user };
-  try {
-    response.quiz = getTodayQuiz_(userFromLoginResult_(user), language, quizDate);
-  } catch (err) {
-    Logger.log('Quiz prefetch failed: ' + (err.message || err));
-  }
-  return response;
+  return authResponse_(user);
 }
 
 function handleApi_(e) {
@@ -86,20 +85,18 @@ function handleApi_(e) {
 
     switch (action) {
       case 'register':
-        return successResponse_(authResponseWithQuiz_(
+        return successResponse_(authResponse_(
           registerUser_(
             params.email,
             params.password,
             params.displayName,
             params.rememberMe
-          ),
-          params.language
+          )
         ));
 
       case 'login':
-        return successResponse_(authResponseWithQuiz_(
-          loginWithPassword_(params.email, params.password, params.rememberMe),
-          params.language
+        return successResponse_(authResponse_(
+          loginWithPassword_(params.email, params.password, params.rememberMe)
         ));
 
       case 'requestOtp':
@@ -109,9 +106,8 @@ function handleApi_(e) {
         return successResponse_(requestPasswordReset_(params.email));
 
       case 'loginOtp':
-        return successResponse_(authResponseWithQuiz_(
-          loginWithOTP_(params.email, params.otp, params.rememberMe),
-          params.language
+        return successResponse_(authResponse_(
+          loginWithOTP_(params.email, params.otp, params.rememberMe)
         ));
 
       case 'quiz':

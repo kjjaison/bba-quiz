@@ -2,19 +2,13 @@
  * Client-callable wrappers for google.script.run (when HTML is served from Apps Script)
  */
 function apiRegister(email, password, displayName, rememberMe, language) {
-  var response = authResponseWithQuiz_(
-    registerUser_(email, password, displayName, rememberMe),
-    language
-  );
+  var response = authResponse_(registerUser_(email, password, displayName, rememberMe));
   response.success = true;
   return response;
 }
 
 function apiLogin(email, password, rememberMe, language) {
-  var response = authResponseWithQuiz_(
-    loginWithPassword_(email, password, rememberMe),
-    language
-  );
+  var response = authResponse_(loginWithPassword_(email, password, rememberMe));
   response.success = true;
   return response;
 }
@@ -28,10 +22,7 @@ function apiForgotPassword(email) {
 }
 
 function apiLoginOtp(email, otp, rememberMe, language) {
-  var response = authResponseWithQuiz_(
-    loginWithOTP_(email, otp, rememberMe),
-    language
-  );
+  var response = authResponse_(loginWithOTP_(email, otp, rememberMe));
   response.success = true;
   return response;
 }

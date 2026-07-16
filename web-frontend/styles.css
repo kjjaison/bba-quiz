@@ -394,6 +394,18 @@
     .option.correct { border-color: var(--success); background: #f0fff4; }
     .option.incorrect { border-color: var(--error); background: #fff5f5; }
     .option.locked { pointer-events: none; opacity: 0.85; }
+    .option.locked.correct,
+    .option.locked.incorrect {
+      opacity: 1;
+    }
+    .option.locked.correct {
+      border-color: var(--success);
+      background: #f0fff4;
+    }
+    .option.locked.incorrect {
+      border-color: var(--error);
+      background: #fff5f5;
+    }
 
     .option input { width: auto; accent-color: var(--primary-light); }
 
