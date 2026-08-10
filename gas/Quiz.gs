@@ -1055,11 +1055,11 @@ function submitQuiz_(user, answers, language, requestedDate) {
       var labels = [];
 
       var subCache = CacheService.getScriptCache().get(submissionLookupCacheKey_(email, quizDate));
-      if (subCache === '__none__') {
-        existing = null;
-      } else if (subCache) {
+      // Never trust negative cache for submit lock — always re-check Firestore
+      if (subCache && subCache !== '__none__') {
         try { existing = JSON.parse(subCache); } catch (e) { existing = null; }
-      } else {
+      }
+      if (!existing || !existing.locked) {
         requests.push(buildFirestoreGetRequest_(
           'submissions',
           firestoreSubmissionDocId_(email, quizDate),
@@ -1194,17 +1194,19 @@ function submitQuiz_(user, answers, language, requestedDate) {
   try {
     profile = getUserProfileByEmail_(user.email);
   } catch (e) {
-    profile = null;
+    throw new Error('Could not load your profile to save the score. Please try again.');
+  }
+  if (!profile) {
+    throw new Error('Could not load your profile to save the score. Please try again.');
   }
 
-  var totalScore = ((profile && profile.totalScore) || 0) + totalPoints;
-  var totalQuizzes = ((profile && profile.totalQuizzes) || 0) + 1;
-  var perfectScores = ((profile && profile.perfectScores) || 0) + (isPerfect ? 1 : 0);
-  // Avoid extra Firestore round-trip: treat each new quiz day as continuing streak if prior streak > 0
-  var streak = (Number(profile && profile.streak) || 0) + 1;
-  var displayName = user.displayName || (profile && profile.displayName) || '';
-  var passwordHash = (profile && profile.passwordHash) || '';
-  var mustChange = profile ? profile.mustChangePassword === true : false;
+  var totalScore = (Number(profile.totalScore) || 0) + totalPoints;
+  var totalQuizzes = (Number(profile.totalQuizzes) || 0) + 1;
+  var perfectScores = (Number(profile.perfectScores) || 0) + (isPerfect ? 1 : 0);
+  var streak = computeStreakFast_(email, quizDate, profile.streak);
+  var displayName = user.displayName || profile.displayName || '';
+  var passwordHash = profile.passwordHash || '';
+  var mustChange = profile.mustChangePassword === true;
 
   try {
     firestoreCommitWrites_([

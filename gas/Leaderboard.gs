@@ -6,6 +6,10 @@
 function getLeaderboard_(period) {
   period = period || 'all';
 
+  if (period === 'daily') {
+    return getLeaderboardForDate_(todayDate_());
+  }
+
   if (useFirestoreForRuntime_()) {
     try {
       return getLeaderboardFromFirestore_(period);
@@ -15,6 +19,21 @@ function getLeaderboard_(period) {
   }
 
   return getLeaderboardFromSheet_(period);
+}
+
+/**
+ * Competition ranking: equal scores share the same rank; next rank skips.
+ * Example: scores 10,10,8 → ranks 1,1,3
+ */
+function assignLeaderboardRanks_(leaderboard) {
+  var rank = 1;
+  for (var i = 0; i < leaderboard.length; i++) {
+    if (i > 0 && Number(leaderboard[i].score) !== Number(leaderboard[i - 1].score)) {
+      rank = i + 1;
+    }
+    leaderboard[i].rank = rank;
+  }
+  return leaderboard;
 }
 
 function getLeaderboardFromFirestore_(period) {
@@ -60,10 +79,7 @@ function buildAllTimeLeaderboardFromUsers_() {
     return b.quizzes - a.quizzes;
   });
 
-  return leaderboard.slice(0, 50).map(function(entry, index) {
-    entry.rank = index + 1;
-    return entry;
-  });
+  return assignLeaderboardRanks_(leaderboard.slice(0, 50));
 }
 
 function buildPeriodLeaderboardFromSubmissions_(period) {
@@ -119,10 +135,7 @@ function buildPeriodLeaderboardFromSubmissions_(period) {
     return b.quizzes - a.quizzes;
   });
 
-  return leaderboard.slice(0, 50).map(function(entry, index) {
-    entry.rank = index + 1;
-    return entry;
-  });
+  return assignLeaderboardRanks_(leaderboard.slice(0, 50));
 }
 
 function getLeaderboardFromSheet_(period) {
@@ -173,12 +186,12 @@ function getLeaderboardFromSheet_(period) {
     }
   }
 
-  leaderboard.sort(function(a, b) { return b.score - a.score; });
-
-  return leaderboard.slice(0, 50).map(function(entry, index) {
-    entry.rank = index + 1;
-    return entry;
+  leaderboard.sort(function(a, b) {
+    if (b.score !== a.score) return b.score - a.score;
+    return b.quizzes - a.quizzes;
   });
+
+  return assignLeaderboardRanks_(leaderboard.slice(0, 50));
 }
 
 function invalidateLeaderboardCache_() {
@@ -186,6 +199,114 @@ function invalidateLeaderboardCache_() {
   cache.remove('lb:fs:all');
   cache.remove('lb:fs:weekly');
   cache.remove('lb:fs:monthly');
+  cache.remove('lb:fs:daily');
+}
+
+/** Leaderboard for one quiz day (submissions on that date only). */
+function getLeaderboardForDate_(dateStr) {
+  dateStr = normalizeSheetDate_(dateStr || todayDate_());
+  if (!dateStr) return [];
+
+  var cache = CacheService.getScriptCache();
+  var cacheKey = 'lb:fs:daily:' + dateStr;
+  var cached = cache.get(cacheKey);
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (e) {}
+  }
+
+  var leaderboard;
+  if (useFirestoreForRuntime_()) {
+    try {
+      leaderboard = buildDailyLeaderboardFromSubmissions_(dateStr);
+    } catch (err) {
+      Logger.log('Firestore daily leaderboard failed, using sheet: ' + (err.message || err));
+      leaderboard = buildDailyLeaderboardFromSheet_(dateStr);
+    }
+  } else {
+    leaderboard = buildDailyLeaderboardFromSheet_(dateStr);
+  }
+
+  try {
+    cache.put(cacheKey, JSON.stringify(leaderboard), 30);
+  } catch (e2) {}
+
+  return leaderboard;
+}
+
+function buildDailyLeaderboardFromSubmissions_(dateStr) {
+  var userDocs = listFirestoreCollection_('users');
+  var displayNames = {};
+  for (var u = 0; u < userDocs.length; u++) {
+    var user = decodeFirestoreDocument_(userDocs[u]);
+    if (user.email) {
+      displayNames[String(user.email).toLowerCase()] = user.displayName || user.email;
+    }
+  }
+
+  var subDocs = listFirestoreCollection_('submissions');
+  var scores = {};
+
+  for (var i = 0; i < subDocs.length; i++) {
+    var s = decodeFirestoreDocument_(subDocs[i]);
+    if (!s.email || s.locked === false) continue;
+
+    var quizDate = normalizeSheetDate_(s.quizDate);
+    if (quizDate !== dateStr) continue;
+
+    var email = String(s.email).toLowerCase();
+    if (!scores[email]) {
+      scores[email] = { email: email, score: 0, quizzes: 0 };
+    }
+    scores[email].score += Number(s.score) || 0;
+    scores[email].quizzes += 1;
+  }
+
+  return sortLeaderboardEntries_(scores, displayNames);
+}
+
+function buildDailyLeaderboardFromSheet_(dateStr) {
+  var data = getSheetData_(CONFIG.SHEETS.SUBMISSIONS);
+  var users = getSheetData_(CONFIG.SHEETS.USERS);
+  var displayNames = {};
+  for (var u = 1; u < users.length; u++) {
+    displayNames[(users[u][0] || '').toLowerCase()] = users[u][2] || users[u][0];
+  }
+
+  var scores = {};
+  for (var i = 1; i < data.length; i++) {
+    var rowDate = normalizeSheetDate_(data[i][1]);
+    if (rowDate !== dateStr) continue;
+
+    var email = (data[i][0] || '').toLowerCase();
+    if (!scores[email]) {
+      scores[email] = { email: email, score: 0, quizzes: 0 };
+    }
+    scores[email].score += Number(data[i][3]) || 0;
+    scores[email].quizzes += 1;
+  }
+
+  return sortLeaderboardEntries_(scores, displayNames);
+}
+
+function sortLeaderboardEntries_(scores, displayNames) {
+  var leaderboard = [];
+  for (var key in scores) {
+    if (!scores.hasOwnProperty(key)) continue;
+    leaderboard.push({
+      displayName: displayNames[key] || key,
+      score: scores[key].score,
+      quizzes: scores[key].quizzes
+    });
+  }
+
+  leaderboard.sort(function(a, b) {
+    if (b.score !== a.score) return b.score - a.score;
+    return b.quizzes - a.quizzes;
+  });
+
+  return assignLeaderboardRanks_(leaderboard.slice(0, 50));
 }
 
 function getUserProfile_(user) {

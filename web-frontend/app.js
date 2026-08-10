@@ -1,4 +1,4 @@
-const APP_VERSION = '2026-07-16.3';
+const APP_VERSION = '2026-07-16.6';
     const VERSION_KEY = 'bba_quiz_app_version';
 
     (function enforceAppVersion() {
@@ -489,7 +489,7 @@ const APP_VERSION = '2026-07-16.3';
       ['quiz', 'leaderboard', 'profile'].forEach(v => {
         document.getElementById('view-' + v).classList.toggle('hidden', v !== view);
       });
-      if (view === 'leaderboard') loadLeaderboard('all');
+      if (view === 'leaderboard') loadLeaderboard('daily');
       if (view === 'profile') loadProfile();
     });
 

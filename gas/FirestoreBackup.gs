@@ -84,7 +84,7 @@ function backupFirestoreToSheet_() {
   };
 }
 
-function replaceSheetDataKeepingHeader_(sheetName, headers, rows) {
+function replaceSheetDataKeepingHeader_(sheetName, headers, rows, allowEmpty) {
   var ss = getSpreadsheet_();
   var sheet = ss.getSheetByName(sheetName);
   if (!sheet) {
@@ -95,6 +95,13 @@ function replaceSheetDataKeepingHeader_(sheetName, headers, rows) {
   }
 
   var lastRow = sheet.getLastRow();
+  if ((!rows || !rows.length) && lastRow > 1 && allowEmpty !== true) {
+    throw new Error(
+      'Backup aborted for "' + sheetName + '": Firestore returned 0 rows but the Sheet has data. ' +
+      'Migrate runtime data to Firestore first, or pass an explicit empty overwrite.'
+    );
+  }
+
   var lastCol = Math.max(sheet.getLastColumn(), headers.length);
   if (lastRow > 1) {
     sheet.getRange(2, 1, lastRow - 1, lastCol).clearContent();

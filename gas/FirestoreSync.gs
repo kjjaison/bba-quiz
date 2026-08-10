@@ -38,6 +38,38 @@ function getSetting_(key) {
   return value;
 }
 
+/** Upsert a Settings row and clear its cache entry. */
+function setSetting_(key, value) {
+  key = String(key || '').trim();
+  if (!key) return;
+  value = String(value == null ? '' : value).trim();
+
+  var sheet = getSpreadsheet_().getSheetByName(CONFIG.SHEETS.SETTINGS);
+  if (!sheet) {
+    sheet = getSpreadsheet_().insertSheet(CONFIG.SHEETS.SETTINGS);
+    sheet.appendRow(['key', 'value']);
+    sheet.getRange(1, 1, 1, 2).setFontWeight('bold');
+  }
+
+  var data = sheet.getDataRange().getValues();
+  var found = false;
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0] || '').trim() === key) {
+      sheet.getRange(i + 1, 2).setValue(value);
+      found = true;
+      break;
+    }
+  }
+  if (!found) {
+    sheet.appendRow([key, value]);
+  }
+
+  try {
+    CacheService.getScriptCache().remove('set:' + key);
+  } catch (e) {}
+  invalidateSheetCache_(CONFIG.SHEETS.SETTINGS);
+}
+
 var FIRESTORE_LANGUAGE_SHEETS = {
   Questions: 'en',
   QuestionsMalayalam: 'ml'
@@ -55,6 +87,33 @@ function hasDirectFirestoreCredentials_() {
   } catch (e) {
     return false;
   }
+}
+
+/** Returns '' if OK, otherwise a human-readable config problem. */
+function getFirestoreConfigProblem_() {
+  try {
+    getFirebaseProjectId_();
+  } catch (e) {
+    return 'Missing firebase_project_id.\nAdd Settings row: firebase_project_id | bbadublin-quiz';
+  }
+
+  var mode = getFirestoreAuthMode_();
+  if (mode === 'service_account') {
+    try {
+      getFirebaseCredentials_();
+    } catch (e) {
+      return 'firestore_auth_mode is service_account but Script properties are missing.\n\n' +
+        'Easiest fix for Spark / blocked keys:\n' +
+        'Settings: firestore_auth_mode | user\n' +
+        'Then: BBA Quiz → Authorize Firebase access';
+    }
+  }
+
+  if (!mode || (mode !== 'user' && mode !== 'service_account')) {
+    return 'Invalid firestore_auth_mode "' + mode + '".\nUse: firestore_auth_mode | user';
+  }
+
+  return '';
 }
 
 function hasCloudFunctionSync_() {
@@ -462,10 +521,37 @@ function syncQuizToFirestoreDirect_() {
   var incomplete = state.phase !== 'done';
 
   if (!incomplete) {
+    try {
+      invalidateQuizPacksAfterSync_(state);
+    } catch (err) {
+      Logger.log('quizPacks invalidate after sync failed: ' + (err.message || err));
+    }
     clearFirestoreSyncState_();
   }
 
   return buildFirestoreSyncResult_(state, incomplete);
+}
+
+function invalidateQuizPacksAfterSync_(state) {
+  var quizIds = Object.keys((state && state.quizMap) || {});
+  var cache = CacheService.getScriptCache();
+  var deletes = [];
+
+  for (var i = 0; i < quizIds.length; i++) {
+    var quizId = quizIds[i];
+    invalidateQuestionCacheForQuiz_(quizId);
+    for (var lang in CONFIG.LANGUAGES) {
+      if (!CONFIG.LANGUAGES.hasOwnProperty(lang)) continue;
+      cache.remove('ak:' + lang + ':' + quizId);
+      deletes.push({
+        delete: firestoreDocumentPath_('quizPacks', lang + '_' + quizId)
+      });
+    }
+  }
+
+  if (deletes.length) {
+    firestoreCommitWrites_(deletes);
+  }
 }
 
 function syncQuizToFirestoreViaCloudFunction_() {
@@ -501,19 +587,37 @@ function syncQuizToFirestoreViaCloudFunction_() {
 }
 
 function syncQuizToFirestore() {
+  // Fresh Settings read (avoid stale empty cache after admin just added rows)
+  try {
+    var cache = CacheService.getScriptCache();
+    cache.remove('set:firebase_project_id');
+    cache.remove('set:firestore_auth_mode');
+    cache.remove('set:firestore_sync_url');
+    cache.remove('quiz_src_mode');
+    cache.remove('rt_src_mode');
+  } catch (e) {}
+
   if (hasDirectFirestoreCredentials_()) {
     return syncQuizToFirestoreDirect_();
   }
   if (hasCloudFunctionSync_()) {
     return syncQuizToFirestoreViaCloudFunction_();
   }
+
+  var problem = getFirestoreConfigProblem_();
   throw new Error(
     'Firestore sync is not configured.\n\n' +
-    'Spark plan (org blocks service account keys):\n' +
-    '1. Settings: firebase_project_id | bbadublin-quiz\n' +
-    '2. Settings: firestore_auth_mode | user\n' +
-    '3. Add your Google account as Editor on Firebase project\n' +
-    '4. Copy appsscript.json oauthScopes, then run Authorize Firebase access\n\n' +
+    (problem ? ('Detected issue:\n' + problem + '\n\n') : '') +
+    'Spark plan (recommended):\n' +
+    '1. Settings sheet — add/fix these exact rows:\n' +
+    '   firebase_project_id | bbadublin-quiz\n' +
+    '   firestore_auth_mode | user\n' +
+    '2. Firebase Console → Project settings → Users and permissions\n' +
+    '   Add your Google account as Editor\n' +
+    '3. Apps Script: paste gas/appsscript.json (must include datastore scope)\n' +
+    '4. BBA Quiz → Authorize Firebase access\n' +
+    '5. BBA Quiz → Test Firebase connection\n' +
+    '6. Then sync again\n\n' +
     'See docs/FIRESTORE-SPARK.md'
   );
 }

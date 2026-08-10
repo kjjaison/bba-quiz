@@ -260,6 +260,21 @@ function showQuizEmbedUrl() {
   );
 }
 
+/** Live mode: quiz is always today — hide / ignore test date picker. */
+function goLiveDisableTestDatePicker() {
+  try {
+    setSetting_('test_date_picker', 'false');
+    showMessage_(
+      'Live mode enabled.\n\n' +
+      'Settings: test_date_picker | false\n' +
+      'Students can only take today’s quiz.\n' +
+      'Refresh the app so the date picker disappears.'
+    );
+  } catch (err) {
+    showMessage_('Could not go live:\n\n' + (err.message || err));
+  }
+}
+
 function onOpen() {
   try {
     SpreadsheetApp.getUi()
@@ -273,12 +288,24 @@ function onOpen() {
       .addItem('Reset paused Firestore sync', 'resetFirestoreSyncStateWithMessage')
       .addItem('Migrate runtime data to Firestore', 'migrateRuntimeDataToFirestore')
       .addItem('Recalculate user stats from submissions', 'recalculateUserStatsFromSubmissions')
+      .addItem('Delete all submissions & reset scores', 'resetAllSubmissionsAndScores')
+      .addItem('Go live (disable test date picker)', 'goLiveDisableTestDatePicker')
       .addItem('Backup Firestore → Sheet now', 'backupFirestoreToSheetWithMessage')
       .addItem('Install 15-min Firestore → Sheet backup', 'installFirestoreBackupTrigger')
       .addItem('Remove auto sync / backup triggers', 'uninstallFirestoreBackupTrigger')
       .addItem('Authorize Firebase access', 'authorizeFirestoreAccess')
       .addItem('Authorize email sending', 'authorizeQuizEmailAccess')
       .addItem('Test quiz email', 'testQuizEmailSend')
+      .addSeparator()
+      .addItem('Test daily welcome email', 'testDailyWelcomeEmail')
+      .addItem('Test daily scoreboard email', 'testDailyScoreboardEmail')
+      .addItem('Test weekly scoreboard email', 'testWeeklyScoreboardEmail')
+      .addItem('Test monthly scoreboard email', 'testMonthlyScoreboardEmail')
+      .addItem('Test all quiz emails', 'testAllQuizEmails')
+      .addItem('Install daily/weekly email triggers', 'installQuizEmailTriggers')
+      .addItem('Remove quiz email triggers', 'removeQuizEmailTriggers')
+      .addItem('Enable email broadcast to all users', 'enableEmailBroadcastToAll')
+      .addSeparator()
       .addItem('Test Firebase connection', 'testFirebaseConnection')
       .addSeparator()
       .addItem('Show Google Sites embed URL', 'showQuizEmbedUrl')

@@ -42,14 +42,30 @@ function getScriptRunnerEmail_() {
 function sendQuizEmail_(options) {
   var senderName = CONFIG.QUIZ_EMAIL_NAME || 'BBA Dublin Bible Quiz';
   var replyTo = getQuizReplyEmail_();
-
-  MailApp.sendEmail({
-    to: options.to,
+  var payload = {
     subject: options.subject,
     htmlBody: options.htmlBody,
     name: senderName,
     replyTo: replyTo
-  });
+  };
+
+  // Broadcast: recipients in BCC. Visible To must be a real mailbox the sender can deliver to
+  // (script runner). A fake/external To like quizmaster@ often causes BCC not to arrive.
+  if (options.bcc) {
+    var visibleTo = options.to || getScriptRunnerEmail_() || replyTo || getQuizFromEmail_();
+    if (!visibleTo) {
+      throw new Error('No visible To address for BCC send. Open the Sheet as the account that sends mail.');
+    }
+    payload.to = visibleTo;
+    payload.bcc = options.bcc;
+  } else {
+    if (!options.to) {
+      throw new Error('Missing email recipient (to).');
+    }
+    payload.to = options.to;
+  }
+
+  MailApp.sendEmail(payload);
 }
 
 /** Re-authorize email sending (MailApp uses the deployer account). */
@@ -95,6 +111,27 @@ function invalidateAllSessionsForUser_(email) {
   if (rowsToDelete.length) {
     invalidateSheetCache_(CONFIG.SHEETS.SESSIONS);
   }
+
+  // Also revoke Firestore sessions for this user
+  try {
+    if (useFirestoreForRuntime_()) {
+      var docs = listFirestoreCollection_('sessions');
+      var deletes = [];
+      for (var s = 0; s < docs.length; s++) {
+        var sess = decodeFirestoreDocument_(docs[s]);
+        if (String(sess.email || '').toLowerCase() === email && sess.sessionToken) {
+          deletes.push({
+            delete: firestoreDocumentPath_('sessions', firestoreSessionDocId_(sess.sessionToken))
+          });
+        }
+      }
+      if (deletes.length) {
+        firestoreCommitWrites_(deletes);
+      }
+    }
+  } catch (err) {
+    Logger.log('Firestore session invalidate failed: ' + (err.message || err));
+  }
 }
 
 var USER_COL = {
@@ -116,9 +153,10 @@ function userMustChangePassword_(row) {
   return val === true || val === 'TRUE' || val === 'true' || val === 1 || val === '1';
 }
 
-function setMustChangePassword_(email, mustChange) {
+function setMustChangePassword_(email, mustChange, passwordHashOverride) {
   email = (email || '').toLowerCase().trim();
   var sheet = getSheet_(CONFIG.SHEETS.USERS);
+  invalidateSheetCache_(CONFIG.SHEETS.USERS);
   var data = getSheetData_(CONFIG.SHEETS.USERS);
 
   for (var i = 1; i < data.length; i++) {
@@ -126,6 +164,9 @@ function setMustChangePassword_(email, mustChange) {
       sheet.getRange(i + 1, USER_COL.MUST_CHANGE_PASSWORD + 1).setValue(!!mustChange);
       invalidateSheetCache_(CONFIG.SHEETS.USERS);
       invalidateUserProfileCache_(email);
+      var hash = passwordHashOverride != null
+        ? String(passwordHashOverride)
+        : String(data[i][1] || '');
       writeFirestoreUserProfile_({
         email: email,
         displayName: data[i][2],
@@ -134,10 +175,28 @@ function setMustChangePassword_(email, mustChange) {
         perfectScores: Number(data[i][8]) || 0,
         streak: Number(data[i][9]) || 0,
         mustChangePassword: !!mustChange,
-        passwordHash: data[i][1]
+        passwordHash: hash
       });
       return;
     }
+  }
+
+  // Firestore-only user (no Sheet row yet)
+  var fsUser = getFirestoreUserByEmail_(email);
+  if (fsUser) {
+    writeFirestoreUserProfile_({
+      email: email,
+      displayName: fsUser.displayName,
+      totalScore: fsUser.totalScore,
+      totalQuizzes: fsUser.totalQuizzes,
+      perfectScores: fsUser.perfectScores,
+      streak: fsUser.streak,
+      mustChangePassword: !!mustChange,
+      passwordHash: passwordHashOverride != null
+        ? String(passwordHashOverride)
+        : fsUser.passwordHash
+    });
+    invalidateUserProfileCache_(email);
   }
 }
 
@@ -185,17 +244,60 @@ function changePassword_(user, currentPassword, newPassword) {
     throw new Error('New password must be different from your current password');
   }
 
-  var sheet = getSheet_(CONFIG.SHEETS.USERS);
-  var data = getSheetData_(CONFIG.SHEETS.USERS);
   var email = (user.email || '').toLowerCase();
+  var currentHash = hashPassword_(currentPassword);
+  var newHash = hashPassword_(newPassword);
 
-  for (var i = 1; i < data.length; i++) {
-    if ((data[i][0] || '').toLowerCase() === email) {
-      if (data[i][USER_COL.PASSWORD_HASH] !== hashPassword_(currentPassword)) {
+  // Prefer Firestore (primary) for password verification
+  var fsUser = getFirestoreUserByEmail_(email);
+  if (fsUser) {
+    if (!fsUser.passwordHash || fsUser.passwordHash !== currentHash) {
+      throw new Error('Current password is incorrect');
+    }
+    writeFirestoreUserProfile_({
+      email: email,
+      displayName: fsUser.displayName || user.displayName || '',
+      totalScore: fsUser.totalScore,
+      totalQuizzes: fsUser.totalQuizzes,
+      perfectScores: fsUser.perfectScores,
+      streak: fsUser.streak,
+      mustChangePassword: false,
+      passwordHash: newHash
+    });
+    invalidateUserProfileCache_(email);
+
+    // Standby Sheet update
+    try {
+      invalidateSheetCache_(CONFIG.SHEETS.USERS);
+      var sheet = getSheet_(CONFIG.SHEETS.USERS);
+      var data = getSheetData_(CONFIG.SHEETS.USERS);
+      for (var i = 1; i < data.length; i++) {
+        if ((data[i][0] || '').toLowerCase() === email) {
+          sheet.getRange(i + 1, USER_COL.PASSWORD_HASH + 1).setValue(newHash);
+          sheet.getRange(i + 1, USER_COL.MUST_CHANGE_PASSWORD + 1).setValue(false);
+          invalidateSheetCache_(CONFIG.SHEETS.USERS);
+          break;
+        }
+      }
+    } catch (err) {
+      Logger.log('Sheet password standby write failed: ' + (err.message || err));
+    }
+
+    return { message: 'Password updated successfully', mustChangePassword: false };
+  }
+
+  var sheet = getSheet_(CONFIG.SHEETS.USERS);
+  invalidateSheetCache_(CONFIG.SHEETS.USERS);
+  var data = getSheetData_(CONFIG.SHEETS.USERS);
+
+  for (var j = 1; j < data.length; j++) {
+    if ((data[j][0] || '').toLowerCase() === email) {
+      if (data[j][USER_COL.PASSWORD_HASH] !== currentHash) {
         throw new Error('Current password is incorrect');
       }
-      sheet.getRange(i + 1, USER_COL.PASSWORD_HASH + 1).setValue(hashPassword_(newPassword));
-      setMustChangePassword_(email, false);
+      sheet.getRange(j + 1, USER_COL.PASSWORD_HASH + 1).setValue(newHash);
+      invalidateSheetCache_(CONFIG.SHEETS.USERS);
+      setMustChangePassword_(email, false, newHash);
       invalidateUserProfileCache_(email);
       return { message: 'Password updated successfully', mustChangePassword: false };
     }
@@ -209,6 +311,8 @@ function requestPasswordReset_(email) {
     throw new Error('Email is required');
   }
 
+  var displayName = 'there';
+  var fsUser = getFirestoreUserByEmail_(email);
   var users = getSheetData_(CONFIG.SHEETS.USERS);
   var userRow = null;
   for (var i = 1; i < users.length; i++) {
@@ -218,21 +322,41 @@ function requestPasswordReset_(email) {
     }
   }
 
-  if (!userRow) {
+  if (!fsUser && !userRow) {
     throw new Error('No account found with this email. Please register first.');
   }
 
+  displayName = (fsUser && fsUser.displayName) || (userRow && userRow[2]) || 'there';
   var tempPassword = generateTempPassword_();
-  updateUserPassword_(email, tempPassword, true);
-  setMustChangePassword_(email, true);
+  var newHash = hashPassword_(tempPassword);
 
-  var displayName = userRow[2] || 'there';
+  if (fsUser) {
+    writeFirestoreUserProfile_({
+      email: email,
+      displayName: displayName,
+      totalScore: fsUser.totalScore,
+      totalQuizzes: fsUser.totalQuizzes,
+      perfectScores: fsUser.perfectScores,
+      streak: fsUser.streak,
+      mustChangePassword: true,
+      passwordHash: newHash
+    });
+    invalidateUserProfileCache_(email);
+  }
+
+  if (userRow) {
+    updateUserPassword_(email, tempPassword, true);
+    setMustChangePassword_(email, true, newHash);
+  } else {
+    invalidateAllSessionsForUser_(email);
+  }
+
   sendQuizEmail_({
     to: email,
     subject: 'BBA Dublin Bible Quiz - Your Password Reset',
     htmlBody: '<div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:24px;">' +
       '<h2 style="color:#1a365d;">BBA Dublin Bible Quiz</h2>' +
-      '<p>Hi ' + displayName + ',</p>' +
+      '<p>Hi ' + String(displayName).replace(/[<>&]/g, '') + ',</p>' +
       '<p>We received a request to reset your quiz password. Your new temporary password is:</p>' +
       '<p style="font-size:24px;font-weight:bold;letter-spacing:2px;color:#2b6cb0;">' + tempPassword + '</p>' +
       '<p style="color:#718096;">Sign in with this password — you will be asked to set a new password right away.</p>' +
@@ -314,14 +438,14 @@ function createSession_(email, rememberMe) {
   var now = new Date();
   var expires = sessionExpiresAt_(now, remember);
 
-  // Firestore only on login hot path — Sheet sessions refreshed by 15-min backup
+  // Must succeed — swallowed failures left clients with unusable tokens
   writeFirestoreSession_({
     email: email,
     token: token,
     expiresAt: expires,
     createdAt: now,
     rememberMe: remember
-  });
+  }, true);
 
   try {
     var cache = CacheService.getScriptCache();

@@ -180,8 +180,11 @@ function writeFirestoreSubmission_(submission) {
   }
 }
 
-function writeFirestoreSession_(session) {
-  if (!session || !session.token) return;
+function writeFirestoreSession_(session, throwOnError) {
+  if (!session || !session.token) {
+    if (throwOnError) throw new Error('Missing session token');
+    return;
+  }
   try {
     firestoreCommitWrites_([buildFirestoreUpdateWrite_(
       'sessions',
@@ -201,6 +204,9 @@ function writeFirestoreSession_(session) {
     )]);
   } catch (err) {
     Logger.log('Firestore session write failed: ' + (err.message || err));
+    if (throwOnError) {
+      throw new Error('Could not create session. Please try again.');
+    }
   }
 }
 
@@ -213,6 +219,123 @@ function deleteFirestoreSession_(token) {
   } catch (err) {
     Logger.log('Firestore session delete failed: ' + (err.message || err));
   }
+}
+
+/**
+ * Destructive: delete every submission and zero all user scores / streaks.
+ * Badges are computed from those stats, so they reset too. Accounts kept.
+ */
+function resetAllSubmissionsAndScores() {
+  var ui = SpreadsheetApp.getUi();
+  var confirm = ui.alert(
+    'Go live — delete ALL submissions?',
+    'This permanently:\n' +
+    '• Deletes every submission in Firestore and the Submissions sheet\n' +
+    '• Sets total score, quizzes, perfect scores, and streak to 0 for all users\n' +
+    '• Clears badges (they come from those stats)\n' +
+    '• Disables the test date picker (live quiz = today only)\n\n' +
+    'Accounts and passwords are kept. This cannot be undone.',
+    ui.ButtonSet.YES_NO
+  );
+  if (confirm !== ui.Button.YES) {
+    showMessage_('Cancelled — nothing was changed.');
+    return;
+  }
+
+  try {
+    var result = resetAllSubmissionsAndScores_();
+    showMessage_(
+      'Live reset complete.\n\n' +
+      'Submissions deleted: ' + result.submissionsDeleted + '\n' +
+      'Users reset: ' + result.usersReset + '\n' +
+      'Test date picker: OFF (today only)\n\n' +
+      'Badges will show as unearned until users quiz again.\n' +
+      'Scoreboard cache cleared — refresh the app.'
+    );
+  } catch (err) {
+    showMessage_('Reset failed:\n\n' + (err.message || err));
+  }
+}
+
+function resetAllSubmissionsAndScores_() {
+  getFirebaseProjectId_();
+  getFirestoreAccessToken_();
+
+  var subDocs = listFirestoreCollection_('submissions');
+  var deletes = [];
+  var submissionsDeleted = 0;
+  for (var i = 0; i < subDocs.length; i++) {
+    if (!subDocs[i].name) continue;
+    deletes.push({ delete: subDocs[i].name });
+    submissionsDeleted++;
+    if (deletes.length >= FIRESTORE_BATCH_WRITE_SIZE) {
+      firestoreCommitWrites_(deletes);
+      deletes = [];
+    }
+  }
+  if (deletes.length) {
+    firestoreCommitWrites_(deletes);
+  }
+
+  var userDocs = listFirestoreCollection_('users');
+  var writes = [];
+  var usersReset = 0;
+  for (var u = 0; u < userDocs.length; u++) {
+    var user = decodeFirestoreDocument_(userDocs[u]);
+    if (!user.email) continue;
+    var em = String(user.email).toLowerCase().trim();
+    writes.push(buildFirestoreUpdateWrite_('users', firestoreEmailDocId_(em), {
+      email: em,
+      displayName: String(user.displayName || em),
+      totalScore: 0,
+      totalQuizzes: 0,
+      perfectScores: 0,
+      streak: 0,
+      mustChangePassword: user.mustChangePassword === true,
+      passwordHash: String(user.passwordHash || ''),
+      updatedAt: new Date().toISOString()
+    }));
+    usersReset++;
+    invalidateUserProfileCache_(em);
+    if (writes.length >= FIRESTORE_BATCH_WRITE_SIZE) {
+      firestoreCommitWrites_(writes);
+      writes = [];
+    }
+  }
+  if (writes.length) {
+    firestoreCommitWrites_(writes);
+  }
+
+  replaceSheetDataKeepingHeader_(CONFIG.SHEETS.SUBMISSIONS, [
+    'email', 'quiz_date', 'answers_json', 'score', 'total_questions',
+    'submitted_at', 'locked'
+  ], [], true);
+
+  resetUsersSheetScores_();
+  setSetting_('test_date_picker', 'false');
+  invalidateLeaderboardCache_();
+  invalidateSheetCache_(CONFIG.SHEETS.USERS);
+  invalidateSheetCache_(CONFIG.SHEETS.SUBMISSIONS);
+
+  return {
+    submissionsDeleted: submissionsDeleted,
+    usersReset: usersReset
+  };
+}
+
+function resetUsersSheetScores_() {
+  var sheet = getSheet_(CONFIG.SHEETS.USERS);
+  var lastRow = sheet.getLastRow();
+  if (lastRow < 2) return;
+
+  // getRange(row, column, numRows, numColumns) — not endRow/endCol
+  var numRows = lastRow - 1;
+  var zeros = [];
+  for (var i = 0; i < numRows; i++) {
+    zeros.push([0, 0, 0, 0]);
+  }
+  // total_score, total_quizzes, perfect_scores, current_streak (cols G–J)
+  sheet.getRange(2, 7, numRows, 4).setValues(zeros);
 }
 
 /**

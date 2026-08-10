@@ -183,4 +183,8 @@ OTP codes still use the OTP sheet (short-lived).
 
 ---
 
-See also: [FIRESTORE-HYBRID.md](./FIRESTORE-HYBRID.md)
+See also:
+
+- [APP-FLOW.md](./APP-FLOW.md) — entire app flow (auth, quiz, sync, APIs, deploy)
+- [FIRESTORE-HYBRID.md](./FIRESTORE-HYBRID.md)
+

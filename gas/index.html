@@ -805,9 +805,10 @@
       <div id="view-leaderboard" class="hidden">
         <div class="card">
           <div class="tabs" id="lb-tabs">
-            <button class="tab active" data-period="all">All Time</button>
-            <button class="tab" data-period="monthly">Monthly</button>
+            <button class="tab active" data-period="daily">Daily</button>
             <button class="tab" data-period="weekly">Weekly</button>
+            <button class="tab" data-period="monthly">Monthly</button>
+            <button class="tab" data-period="all">All Time</button>
           </div>
           <div id="leaderboard-content">
             <div class="loading"><div class="spinner"></div>Loading...</div>
@@ -1343,7 +1344,7 @@
       ['quiz', 'leaderboard', 'profile'].forEach(v => {
         document.getElementById('view-' + v).classList.toggle('hidden', v !== view);
       });
-      if (view === 'leaderboard') loadLeaderboard('all');
+      if (view === 'leaderboard') loadLeaderboard('daily');
       if (view === 'profile') loadProfile();
     });
 
