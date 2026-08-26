@@ -48,15 +48,17 @@ function getLeaderboardPeriodLabel_(period) {
   period = String(period || 'all').toLowerCase();
   var today = todayDate_();
   if (period === 'daily') {
-    return formatEmailDate_(today);
+    var parts = today.split('-');
+    var day = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+    return Utilities.formatDate(day, CONFIG.TIMEZONE, 'EEEE, d MMMM yyyy');
   }
   if (period === 'weekly') {
     return 'Last 7 days';
   }
   if (period === 'monthly') {
-    var parts = today.split('-');
-    var d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
-    return Utilities.formatDate(d, CONFIG.TIMEZONE, 'MMMM yyyy');
+    var mParts = today.split('-');
+    var month = new Date(Number(mParts[0]), Number(mParts[1]) - 1, Number(mParts[2]), 12, 0, 0);
+    return Utilities.formatDate(month, CONFIG.TIMEZONE, 'MMMM yyyy');
   }
   return 'All time';
 }

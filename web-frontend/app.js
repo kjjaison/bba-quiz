@@ -201,6 +201,19 @@ const APP_VERSION = '2026-07-16.6';
       const payload = { action, ...params };
       const isAppsScript = url.indexOf('script.google.com') >= 0;
 
+      function buildRequestUrl() {
+        const requestUrl = new URL(url);
+        requestUrl.searchParams.set('action', action);
+        // Keep scalar params on the URL too — Apps Script /exec redirects can drop POST bodies.
+        Object.keys(params).forEach((key) => {
+          const val = params[key];
+          if (val === undefined || val === null) return;
+          if (typeof val === 'object') return;
+          requestUrl.searchParams.set(key, String(val));
+        });
+        return requestUrl.toString();
+      }
+
       async function readJsonResponse(response) {
         const text = await response.text();
         if (text.trim().startsWith('<')) {
@@ -213,8 +226,10 @@ const APP_VERSION = '2026-07-16.6';
         }
       }
 
+      const requestUrl = buildRequestUrl();
+
       try {
-        const postResponse = await fetch(url, {
+        const postResponse = await fetch(requestUrl, {
           method: 'POST',
           redirect: 'follow',
           headers: {
@@ -234,14 +249,7 @@ const APP_VERSION = '2026-07-16.6';
         }
       }
 
-      const getUrl = new URL(url);
-      getUrl.searchParams.set('action', action);
-      Object.keys(params).forEach((key) => {
-        const val = params[key];
-        if (val === undefined || val === null) return;
-        getUrl.searchParams.set(key, typeof val === 'object' ? JSON.stringify(val) : String(val));
-      });
-      const getResponse = await fetch(getUrl.toString(), { method: 'GET', redirect: 'follow' });
+      const getResponse = await fetch(requestUrl, { method: 'GET', redirect: 'follow' });
       try {
         return await readJsonResponse(getResponse);
       } catch (getErr) {
@@ -1017,6 +1025,12 @@ const APP_VERSION = '2026-07-16.6';
       try {
         const res = await API.call('leaderboard', { token: currentToken, period });
         const rows = res.leaderboard || [];
+        if (res.period && String(res.period).toLowerCase() !== String(period).toLowerCase()) {
+          throw new Error(
+            'Scoreboard period mismatch (requested ' + period + ', got ' + res.period +
+            '). Redeploy Apps Script: Deploy → Manage deployments → New version.'
+          );
+        }
         const caption = scoreboardCaption(period, res.label);
         const showQuizzes = period !== 'daily';
         let html = '<p class="leaderboard-caption">' + escapeHtml(caption) + '</p>';

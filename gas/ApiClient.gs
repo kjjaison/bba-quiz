@@ -49,12 +49,16 @@ function apiSubmitQuiz(token, answers, language, quizDate) {
 
 function apiLeaderboard(token, period) {
   validateSession_(token);
-  period = String(period || 'all').toLowerCase();
+  period = String(period || 'daily').toLowerCase();
+  var label = period;
+  try {
+    label = getLeaderboardPeriodLabel_(period);
+  } catch (e) {}
   return {
     success: true,
     leaderboard: getLeaderboard_(period),
     period: period,
-    label: getLeaderboardPeriodLabel_(period)
+    label: label
   };
 }
 

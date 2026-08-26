@@ -73,11 +73,20 @@ function authResponseWithQuiz_(user, language, quizDate) {
 
 function handleApi_(e) {
   try {
+    // Query-string params first, then POST body overrides.
+    // Apps Script /exec often 302-redirects; some clients lose the body, so
+    // critical fields (action, period, token) are also sent on the URL.
     var params = {};
-    if (e.postData && e.postData.contents) {
-      params = JSON.parse(e.postData.contents);
-    } else if (e.parameter) {
+    if (e.parameter) {
       params = normalizeApiParams_(e.parameter);
+    }
+    if (e.postData && e.postData.contents) {
+      var bodyParams = JSON.parse(e.postData.contents);
+      for (var key in bodyParams) {
+        if (bodyParams.hasOwnProperty(key)) {
+          params[key] = bodyParams[key];
+        }
+      }
     }
 
     var action = params.action || (e.parameter && e.parameter.action);
@@ -124,11 +133,18 @@ function handleApi_(e) {
 
       case 'leaderboard':
         validateSession_(token);
-        var lbPeriod = String(params.period || 'all').toLowerCase();
+        // Default to daily (same as the email), never silently fall back to all-time.
+        var lbPeriod = String(params.period || 'daily').toLowerCase();
+        var lbLabel = '';
+        try {
+          lbLabel = getLeaderboardPeriodLabel_(lbPeriod);
+        } catch (labelErr) {
+          lbLabel = lbPeriod;
+        }
         return successResponse_({
           leaderboard: getLeaderboard_(lbPeriod),
           period: lbPeriod,
-          label: getLeaderboardPeriodLabel_(lbPeriod)
+          label: lbLabel
         });
 
       case 'changePassword':
