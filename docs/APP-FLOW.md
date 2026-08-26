@@ -139,7 +139,7 @@ Re-submit of a locked quiz is rejected.
 
 | Feature | API | Source |
 |---------|-----|--------|
-| Scoreboard | `leaderboard` (`daily` / `weekly` / `monthly` / `all`) | Firestore users/submissions (Sheet fallback) |
+| Scoreboard | `leaderboard` (`daily` / `weekly` / `monthly` / `all`) | Firestore users/submissions (Sheet fallback). **Daily** = today’s quiz only (same as the daily email). **Monthly** = current calendar month in Europe/Dublin (1st through today). |
 | Profile + badges | `profile` | User stats + rank + `CONFIG.BADGE_RULES` |
 
 After submit, scoreboard should show new totals immediately (Firestore). If totals look wrong historically, run **Recalculate user stats from submissions**.

@@ -436,6 +436,13 @@
     .score-circle .points { font-size: 2rem; font-weight: 700; }
     .score-circle .label { font-size: 0.8rem; opacity: 0.9; }
 
+    .leaderboard-caption {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin: 0 0 1rem;
+    }
+
     .leaderboard-table { width: 100%; border-collapse: collapse; }
 
     .leaderboard-table th,

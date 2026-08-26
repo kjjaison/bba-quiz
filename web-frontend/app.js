@@ -489,7 +489,12 @@ const APP_VERSION = '2026-07-16.6';
       ['quiz', 'leaderboard', 'profile'].forEach(v => {
         document.getElementById('view-' + v).classList.toggle('hidden', v !== view);
       });
-      if (view === 'leaderboard') loadLeaderboard('daily');
+      if (view === 'leaderboard') {
+        document.querySelectorAll('#lb-tabs .tab').forEach(t => {
+          t.classList.toggle('active', t.dataset.period === 'daily');
+        });
+        loadLeaderboard('daily');
+      }
       if (view === 'profile') loadProfile();
     });
 
@@ -987,6 +992,24 @@ const APP_VERSION = '2026-07-16.6';
       setLoading(btn, false);
     }
 
+    function scoreboardCaption(period, label) {
+      if (label) return label;
+      const tz = 'Europe/Dublin';
+      const now = new Date();
+      if (period === 'daily') {
+        return new Intl.DateTimeFormat('en-GB', {
+          timeZone: tz, weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'
+        }).format(now);
+      }
+      if (period === 'weekly') return 'Last 7 days';
+      if (period === 'monthly') {
+        return new Intl.DateTimeFormat('en-GB', {
+          timeZone: tz, month: 'long', year: 'numeric'
+        }).format(now);
+      }
+      return 'All time';
+    }
+
     // Leaderboard
     async function loadLeaderboard(period) {
       const container = document.getElementById('leaderboard-content');
@@ -994,18 +1017,24 @@ const APP_VERSION = '2026-07-16.6';
       try {
         const res = await API.call('leaderboard', { token: currentToken, period });
         const rows = res.leaderboard || [];
+        const caption = scoreboardCaption(period, res.label);
+        const showQuizzes = period !== 'daily';
+        let html = '<p class="leaderboard-caption">' + escapeHtml(caption) + '</p>';
         if (rows.length === 0) {
-          container.innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:1rem;">No scores yet. Be the first!</p>';
+          html += '<p style="text-align:center;color:var(--text-muted);padding:1rem;">No scores yet. Be the first!</p>';
+          container.innerHTML = html;
           return;
         }
-        let html = '<table class="leaderboard-table"><thead><tr><th>Rank</th><th>Name</th><th>Score</th><th>Quizzes</th></tr></thead><tbody>';
+        html += '<table class="leaderboard-table"><thead><tr><th>Rank</th><th>Name</th><th>Score</th>';
+        if (showQuizzes) html += '<th>Quizzes</th>';
+        html += '</tr></thead><tbody>';
         rows.forEach(row => {
           const rankCls = row.rank <= 3 ? 'rank-' + row.rank : 'rank-other';
           html += '<tr>';
           html += '<td><span class="rank-badge ' + rankCls + '">' + row.rank + '</span></td>';
           html += '<td>' + escapeHtml(row.displayName) + '</td>';
           html += '<td><strong>' + row.score + '</strong></td>';
-          html += '<td>' + row.quizzes + '</td>';
+          if (showQuizzes) html += '<td>' + row.quizzes + '</td>';
           html += '</tr>';
         });
         html += '</tbody></table>';

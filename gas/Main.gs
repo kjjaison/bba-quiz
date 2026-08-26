@@ -124,8 +124,11 @@ function handleApi_(e) {
 
       case 'leaderboard':
         validateSession_(token);
+        var lbPeriod = String(params.period || 'all').toLowerCase();
         return successResponse_({
-          leaderboard: getLeaderboard_(params.period || 'all')
+          leaderboard: getLeaderboard_(lbPeriod),
+          period: lbPeriod,
+          label: getLeaderboardPeriodLabel_(lbPeriod)
         });
 
       case 'changePassword':

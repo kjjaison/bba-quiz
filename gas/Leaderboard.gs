@@ -1,10 +1,10 @@
 /**
- * Leaderboards (all-time, monthly, weekly) and badges.
+ * Leaderboards (daily = today, weekly = last 7 days, monthly = this calendar month, all-time).
  * Prefers Firestore so scores appear right after submit (Sheet is standby only).
  */
 
 function getLeaderboard_(period) {
-  period = period || 'all';
+  period = String(period || 'all').toLowerCase();
 
   if (period === 'daily') {
     return getLeaderboardForDate_(todayDate_());
@@ -19,6 +19,62 @@ function getLeaderboard_(period) {
   }
 
   return getLeaderboardFromSheet_(period);
+}
+
+/**
+ * Inclusive yyyy-MM-dd window in CONFIG.TIMEZONE (Europe/Dublin).
+ * daily   = today only (same as the daily email)
+ * weekly  = last 7 calendar days including today
+ * monthly = current calendar month
+ * all     = no bounds
+ */
+function getLeaderboardPeriodRange_(period) {
+  var today = todayDate_();
+  period = String(period || 'all').toLowerCase();
+
+  if (period === 'daily') {
+    return { start: today, end: today };
+  }
+  if (period === 'weekly') {
+    return { start: addDaysYmd_(today, -6), end: today };
+  }
+  if (period === 'monthly') {
+    return { start: today.substring(0, 7) + '-01', end: today };
+  }
+  return { start: '', end: '' };
+}
+
+function getLeaderboardPeriodLabel_(period) {
+  period = String(period || 'all').toLowerCase();
+  var today = todayDate_();
+  if (period === 'daily') {
+    return formatEmailDate_(today);
+  }
+  if (period === 'weekly') {
+    return 'Last 7 days';
+  }
+  if (period === 'monthly') {
+    var parts = today.split('-');
+    var d = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12, 0, 0);
+    return Utilities.formatDate(d, CONFIG.TIMEZONE, 'MMMM yyyy');
+  }
+  return 'All time';
+}
+
+function addDaysYmd_(ymd, days) {
+  var parts = String(ymd || '').split('-');
+  var d = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2])));
+  d.setUTCDate(d.getUTCDate() + days);
+  return Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
+}
+
+function quizDateInRange_(quizDate, range) {
+  var ymd = normalizeSheetDate_(quizDate);
+  if (!ymd || !/^\d{4}-\d{2}-\d{2}$/.test(ymd)) return false;
+  range = range || {};
+  if (range.start && ymd < range.start) return false;
+  if (range.end && ymd > range.end) return false;
+  return true;
 }
 
 /**
@@ -83,14 +139,7 @@ function buildAllTimeLeaderboardFromUsers_() {
 }
 
 function buildPeriodLeaderboardFromSubmissions_(period) {
-  var now = new Date();
-  var startDate = null;
-  if (period === 'weekly') {
-    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  } else if (period === 'monthly') {
-    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-  }
-
+  var range = getLeaderboardPeriodRange_(period);
   var userDocs = listFirestoreCollection_('users');
   var displayNames = {};
   for (var u = 0; u < userDocs.length; u++) {
@@ -106,11 +155,7 @@ function buildPeriodLeaderboardFromSubmissions_(period) {
   for (var i = 0; i < subDocs.length; i++) {
     var s = decodeFirestoreDocument_(subDocs[i]);
     if (!s.email || s.locked === false) continue;
-
-    var quizDate = normalizeSheetDate_(s.quizDate);
-    if (!quizDate) continue;
-    var subDate = new Date(quizDate + 'T12:00:00');
-    if (startDate && subDate < startDate) continue;
+    if (!quizDateInRange_(s.quizDate, range)) continue;
 
     var email = String(s.email).toLowerCase();
     if (!scores[email]) {
@@ -147,26 +192,15 @@ function getLeaderboardFromSheet_(period) {
     displayNames[(users[u][0] || '').toLowerCase()] = users[u][2] || users[u][0];
   }
 
-  var now = new Date();
-  var startDate = null;
-
-  if (period === 'weekly') {
-    startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-  } else if (period === 'monthly') {
-    startDate = new Date(now.getFullYear(), now.getMonth(), 1);
-  }
-
+  var range = getLeaderboardPeriodRange_(period);
   var scores = {};
 
   for (var i = 1; i < data.length; i++) {
-    var email = (data[i][0] || '').toLowerCase();
-    var rowDate = data[i][1];
-    var subDate = rowDate instanceof Date ? rowDate : new Date(String(rowDate));
-
-    if (startDate && subDate < startDate) {
+    if (!quizDateInRange_(data[i][1], range)) {
       continue;
     }
 
+    var email = (data[i][0] || '').toLowerCase();
     var points = Number(data[i][3]) || 0;
     if (!scores[email]) {
       scores[email] = { email: email, score: 0, quizzes: 0 };
@@ -199,7 +233,9 @@ function invalidateLeaderboardCache_() {
   cache.remove('lb:fs:all');
   cache.remove('lb:fs:weekly');
   cache.remove('lb:fs:monthly');
+  // Daily boards are cached as lb:fs:daily:YYYY-MM-DD (see getLeaderboardForDate_).
   cache.remove('lb:fs:daily');
+  cache.remove('lb:fs:daily:' + todayDate_());
 }
 
 /** Leaderboard for one quiz day (submissions on that date only). */

@@ -225,7 +225,7 @@ function buildScoreboardEmail_(period, dateStr) {
     subject = 'Weekly scoreboard — last 7 days';
   } else if (period === 'monthly') {
     leaderboard = getLeaderboard_('monthly');
-    var monthLabel = Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'MMMM yyyy');
+    var monthLabel = getLeaderboardPeriodLabel_('monthly');
     title = 'Monthly scoreboard — ' + monthLabel;
     subject = 'Monthly scoreboard — ' + monthLabel;
   } else {
@@ -262,7 +262,7 @@ function buildPersonalizedScoreboardEmail_(period, recipientEmail, dateStr) {
   } else if (period === 'weekly') {
     title = 'Weekly scoreboard';
   } else {
-    title = 'Monthly scoreboard — ' + Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'MMMM yyyy');
+    title = 'Monthly scoreboard — ' + getLeaderboardPeriodLabel_('monthly');
   }
 
   var personal = '';

@@ -49,7 +49,13 @@ function apiSubmitQuiz(token, answers, language, quizDate) {
 
 function apiLeaderboard(token, period) {
   validateSession_(token);
-  return { success: true, leaderboard: getLeaderboard_(period) };
+  period = String(period || 'all').toLowerCase();
+  return {
+    success: true,
+    leaderboard: getLeaderboard_(period),
+    period: period,
+    label: getLeaderboardPeriodLabel_(period)
+  };
 }
 
 function apiChangePassword(token, currentPassword, newPassword) {
