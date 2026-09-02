@@ -12,7 +12,7 @@ This is the **entire application flow** document. Anyone joining the project can
 
 | Who | What they do |
 |-----|----------------|
-| **Students** | Register / sign in, take today’s quiz (English or Malayalam), submit once, see right/wrong, view scoreboard and profile/badges |
+| **Students** | Register / sign in, take today’s quiz (English or Malayalam), submit once, see right/wrong, view scoreboard, quiz history, and profile/badges |
 | **Admins** | Edit questions in Google Sheet, sync to Firestore, manage Firebase/settings, use the **BBA Quiz** sheet menu |
 
 **Live site (typical):** `https://www.quiz.bbadublin.com/`  
@@ -139,10 +139,11 @@ Re-submit of a locked quiz is rejected.
 
 | Feature | API | Source |
 |---------|-----|--------|
-| Scoreboard | `leaderboard` (`daily` / `weekly` / `monthly` / `all`) | Firestore users/submissions (Sheet fallback). **Daily** = today’s quiz only (same as the daily email). **Monthly** = current calendar month in Europe/Dublin (1st through today). |
-| Profile + badges | `profile` | User stats + rank + `CONFIG.BADGE_RULES` |
+| Scoreboard | `leaderboard` (`daily` / `weekly` / `monthly` / `all`) | Sums locked **submissions** (not `users.totalScore`). **Daily** = today’s quiz only (same as the daily email). **Monthly** = current calendar month in Europe/Dublin (1st through today). **All Time** = every locked quiz. |
+| Quiz history | `history` | The signed-in user’s score per day (date, chapter, score) |
+| Profile + badges | `profile` | User stats from submissions + rank + `CONFIG.BADGE_RULES` |
 
-After submit, scoreboard should show new totals immediately (Firestore). If totals look wrong historically, run **Recalculate user stats from submissions**.
+After submit, scoreboard and history should show new scores immediately (Firestore). If stored `users.totalScore` is stale, All Time still stays correct because it sums submissions. To repair stored totals/streaks, run **Recalculate user stats from submissions**.
 
 ---
 
@@ -172,8 +173,8 @@ flowchart TD
 | `questions` | text + options | Load |
 | `answerKeys` | correct letter only | Submit / score |
 | `quizPacks` | cached pack (server) | Faster load |
-| `submissions` | user answers, score, locked | Submit / reload |
-| `users` | totals for scoreboard | After submit |
+| `submissions` | user answers, score, locked | Submit / reload / scoreboard / history |
+| `users` | profile, streak, denormalized totals | After submit |
 
 **Code:** `gas/Quiz.gs`, `gas/FirestoreRest.gs`, `gas/index.html` / `web-frontend/app.js`
 
@@ -224,6 +225,7 @@ Hosted UI uses `window.BBA_API_URL` (usually the `/exec` URL or `/api` proxy).
 | `quiz` | token | Load quiz for date |
 | `submit` | token | Score and lock |
 | `leaderboard` | token | Rankings |
+| `history` | token | Signed-in user’s daily scores |
 | `profile` | token | Stats + badges |
 | `ping` | — | Version + public config |
 
@@ -320,4 +322,4 @@ More: [SETUP.md](./SETUP.md), [FLUTTER.md](./FLUTTER.md), [SHEET-TEMPLATE.md](./
 
 ---
 
-*Last structural update: `2026-07-16.6` — Firestore-primary runtime; manual question sync (invalidates `quizPacks`); 15‑min Sheet backup with empty-guard; login separate from quiz load; submit live-checks lock and returns `correctAnswers` for review.*
+*Last structural update: `2026-09-02.1` — All Time scoreboard sums submissions; History tab shows each user’s daily scores.*

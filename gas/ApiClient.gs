@@ -71,3 +71,8 @@ function apiProfile(token) {
   var user = validateSession_(token);
   return { success: true, profile: getUserProfile_(user) };
 }
+
+function apiHistory(token) {
+  var user = validateSession_(token);
+  return { success: true, history: getUserQuizHistory_(user) };
+}

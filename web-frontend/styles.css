@@ -74,6 +74,7 @@
 
     .tabs {
       display: flex;
+      flex-wrap: wrap;
       gap: 0.5rem;
       margin-bottom: 1.25rem;
       border-bottom: 2px solid var(--border);
@@ -437,6 +438,13 @@
     .score-circle .label { font-size: 0.8rem; opacity: 0.9; }
 
     .leaderboard-caption {
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 0.9rem;
+      margin: 0 0 1rem;
+    }
+
+    .history-summary {
       text-align: center;
       color: var(--text-muted);
       font-size: 0.9rem;

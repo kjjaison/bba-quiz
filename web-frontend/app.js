@@ -1,4 +1,4 @@
-const APP_VERSION = '2026-07-16.6';
+const APP_VERSION = '2026-09-02.1';
     const VERSION_KEY = 'bba_quiz_app_version';
 
     (function enforceAppVersion() {
@@ -275,7 +275,8 @@ const APP_VERSION = '2026-07-16.6';
               submit: 'apiSubmitQuiz',
               leaderboard: 'apiLeaderboard',
               changePassword: 'apiChangePassword',
-              profile: 'apiProfile'
+              profile: 'apiProfile',
+              history: 'apiHistory'
             };
             const fn = fnMap[action];
             const args = action === 'register' ? [params.email, params.password, params.displayName, params.rememberMe, params.language]
@@ -289,6 +290,7 @@ const APP_VERSION = '2026-07-16.6';
               : action === 'changePassword' ? [params.token, params.currentPassword, params.newPassword]
               : action === 'leaderboard' ? [params.token, params.period]
               : action === 'profile' ? [params.token]
+              : action === 'history' ? [params.token]
               : [];
 
             google.script.run
@@ -494,7 +496,7 @@ const APP_VERSION = '2026-07-16.6';
       document.querySelectorAll('#app-tabs .tab').forEach(t => t.classList.remove('active'));
       e.target.classList.add('active');
       const view = e.target.dataset.view;
-      ['quiz', 'leaderboard', 'profile'].forEach(v => {
+      ['quiz', 'leaderboard', 'history', 'profile'].forEach(v => {
         document.getElementById('view-' + v).classList.toggle('hidden', v !== view);
       });
       if (view === 'leaderboard') {
@@ -503,6 +505,7 @@ const APP_VERSION = '2026-07-16.6';
         });
         loadLeaderboard('daily');
       }
+      if (view === 'history') loadHistory();
       if (view === 'profile') loadProfile();
     });
 
@@ -1049,6 +1052,45 @@ const APP_VERSION = '2026-07-16.6';
           html += '<td>' + escapeHtml(row.displayName) + '</td>';
           html += '<td><strong>' + row.score + '</strong></td>';
           if (showQuizzes) html += '<td>' + row.quizzes + '</td>';
+          html += '</tr>';
+        });
+        html += '</tbody></table>';
+        container.innerHTML = html;
+      } catch (err) {
+        container.innerHTML = '<div class="alert alert-error">' + (err.message || 'Failed to load') + '</div>';
+      }
+    }
+
+    function formatHistoryDate(ymd) {
+      const parts = String(ymd || '').split('-');
+      if (parts.length !== 3) return ymd || '';
+      const d = new Date(Date.UTC(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 12));
+      return new Intl.DateTimeFormat('en-GB', {
+        timeZone: 'UTC', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric'
+      }).format(d);
+    }
+
+    async function loadHistory() {
+      const container = document.getElementById('history-content');
+      container.innerHTML = '<div class="loading"><div class="spinner"></div>Loading...</div>';
+      try {
+        const res = await API.call('history', { token: currentToken });
+        const rows = res.history || [];
+        if (rows.length === 0) {
+          container.innerHTML = '<p style="text-align:center;color:var(--text-muted);padding:1rem;">No quizzes completed yet. Take today\'s quiz to start your history.</p>';
+          return;
+        }
+        const totalScore = rows.reduce((sum, row) => sum + (Number(row.score) || 0), 0);
+        let html = '<p class="history-summary">' + rows.length + ' quiz' + (rows.length === 1 ? '' : 'zes') +
+          ' · ' + totalScore + ' point' + (totalScore === 1 ? '' : 's') + '</p>';
+        html += '<table class="leaderboard-table"><thead><tr><th>Date</th><th>Chapter</th><th>Score</th></tr></thead><tbody>';
+        rows.forEach(row => {
+          const totalQ = Number(row.totalQuestions) || 0;
+          const scoreText = totalQ > 0 ? (row.score + ' / ' + totalQ) : String(row.score);
+          html += '<tr>';
+          html += '<td>' + escapeHtml(formatHistoryDate(row.date)) + '</td>';
+          html += '<td>' + escapeHtml(row.chapter || '—') + '</td>';
+          html += '<td><strong>' + escapeHtml(scoreText) + '</strong></td>';
           html += '</tr>';
         });
         html += '</tbody></table>';

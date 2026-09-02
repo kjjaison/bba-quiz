@@ -159,6 +159,12 @@ function handleApi_(e) {
           profile: getUserProfile_(profileUser)
         });
 
+      case 'history':
+        var historyUser = validateSession_(token);
+        return successResponse_({
+          history: getUserQuizHistory_(historyUser)
+        });
+
       case 'ping':
         var appConfig = getAppPublicConfig_();
         return successResponse_({

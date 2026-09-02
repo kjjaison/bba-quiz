@@ -104,40 +104,15 @@ function getLeaderboardFromFirestore_(period) {
     } catch (e) {}
   }
 
-  var leaderboard;
-  if (period === 'all') {
-    leaderboard = buildAllTimeLeaderboardFromUsers_();
-  } else {
-    leaderboard = buildPeriodLeaderboardFromSubmissions_(period);
-  }
+  // All periods (including all-time) sum locked submissions.
+  // users.totalScore can be 0 after migration/password writes even when quizzes exist.
+  var leaderboard = buildPeriodLeaderboardFromSubmissions_(period);
 
   try {
     cache.put(cacheKey, JSON.stringify(leaderboard), 30);
   } catch (e) {}
 
   return leaderboard;
-}
-
-function buildAllTimeLeaderboardFromUsers_() {
-  var docs = listFirestoreCollection_('users');
-  var leaderboard = [];
-
-  for (var i = 0; i < docs.length; i++) {
-    var u = decodeFirestoreDocument_(docs[i]);
-    if (!u.email) continue;
-    leaderboard.push({
-      displayName: u.displayName || u.email,
-      score: Number(u.totalScore) || 0,
-      quizzes: Number(u.totalQuizzes) || 0
-    });
-  }
-
-  leaderboard.sort(function(a, b) {
-    if (b.score !== a.score) return b.score - a.score;
-    return b.quizzes - a.quizzes;
-  });
-
-  return assignLeaderboardRanks_(leaderboard.slice(0, 50));
 }
 
 function buildPeriodLeaderboardFromSubmissions_(period) {
@@ -347,7 +322,143 @@ function sortLeaderboardEntries_(scores, displayNames) {
   return assignLeaderboardRanks_(leaderboard.slice(0, 50));
 }
 
+function getUserQuizHistory_(user) {
+  var email = String((user && user.email) || '').toLowerCase().trim();
+  if (!email) return [];
+
+  var rows = [];
+  if (useFirestoreForRuntime_()) {
+    try {
+      rows = listUserSubmissionsFromFirestore_(email);
+    } catch (err) {
+      Logger.log('Firestore history failed, using sheet: ' + (err.message || err));
+      rows = listUserSubmissionsFromSheet_(email);
+    }
+  } else {
+    rows = listUserSubmissionsFromSheet_(email);
+  }
+
+  var labels = getScheduleLabelMap_();
+  for (var i = 0; i < rows.length; i++) {
+    rows[i].chapter = labels[rows[i].date] || '';
+  }
+
+  rows.sort(function(a, b) {
+    if (a.date < b.date) return 1;
+    if (a.date > b.date) return -1;
+    return 0;
+  });
+  return rows;
+}
+
+function listUserSubmissionsFromFirestore_(email) {
+  var docs = runFirestoreQuery_({
+    from: [{ collectionId: 'submissions' }],
+    where: firestoreStringFilter_('email', email)
+  });
+  var rows = [];
+  for (var i = 0; i < docs.length; i++) {
+    var s = docs[i];
+    if (!s.email || s.locked === false) continue;
+    var quizDate = normalizeSheetDate_(s.quizDate);
+    if (!quizDate) continue;
+    rows.push({
+      date: quizDate,
+      score: Number(s.score) || 0,
+      totalQuestions: Number(s.totalQuestions) || 0
+    });
+  }
+  return rows;
+}
+
+function listUserSubmissionsFromSheet_(email) {
+  var data = getSheetData_(CONFIG.SHEETS.SUBMISSIONS);
+  var rows = [];
+  for (var i = 1; i < data.length; i++) {
+    if (String(data[i][0] || '').toLowerCase() !== email) continue;
+    var quizDate = normalizeSheetDate_(data[i][1]);
+    if (!quizDate) continue;
+    rows.push({
+      date: quizDate,
+      score: Number(data[i][3]) || 0,
+      totalQuestions: Number(data[i][4]) || 0
+    });
+  }
+  return rows;
+}
+
+function getScheduleLabelMap_() {
+  var cache = CacheService.getScriptCache();
+  var cached = cache.get('sched_labels');
+  if (cached) {
+    try {
+      return JSON.parse(cached);
+    } catch (e) {}
+  }
+
+  var map = {};
+  try {
+    if (useFirestoreForQuiz_()) {
+      var docs = listFirestoreCollection_('schedule');
+      for (var i = 0; i < docs.length; i++) {
+        var s = decodeFirestoreDocument_(docs[i]);
+        var dateStr = normalizeSheetDate_(s.date);
+        if (!dateStr) continue;
+        map[dateStr] = formatScheduleLabel_(s);
+      }
+    } else {
+      var sheet = getSheetData_(CONFIG.SHEETS.SCHEDULE);
+      for (var r = 1; r < sheet.length; r++) {
+        var sheetDate = normalizeSheetDate_(sheet[r][0]);
+        if (!sheetDate) continue;
+        map[sheetDate] = formatScheduleLabel_({
+          book: sheet[r][1],
+          chapter: sheet[r][2],
+          quizId: sheet[r][3]
+        });
+      }
+    }
+  } catch (err) {
+    Logger.log('Schedule label map failed: ' + (err.message || err));
+  }
+
+  try {
+    cache.put('sched_labels', JSON.stringify(map), 300);
+  } catch (e2) {}
+  return map;
+}
+
 function getUserProfile_(user) {
+  var email = String((user && user.email) || '').toLowerCase().trim();
+  var history = [];
+  if (email) {
+    if (useFirestoreForRuntime_()) {
+      try {
+        history = listUserSubmissionsFromFirestore_(email);
+      } catch (err) {
+        history = listUserSubmissionsFromSheet_(email);
+      }
+    } else {
+      history = listUserSubmissionsFromSheet_(email);
+    }
+  }
+  var totalScore = 0;
+  var totalQuizzes = history.length;
+  var perfectScores = 0;
+  var pointsPerCorrect = CONFIG.POINTS_PER_CORRECT || 1;
+  for (var h = 0; h < history.length; h++) {
+    var row = history[h];
+    totalScore += Number(row.score) || 0;
+    if (row.totalQuestions > 0 && Number(row.score) === Number(row.totalQuestions) * pointsPerCorrect) {
+      perfectScores += 1;
+    }
+  }
+  if (totalQuizzes === 0) {
+    totalScore = Number(user.totalScore) || 0;
+    totalQuizzes = Number(user.totalQuizzes) || 0;
+    perfectScores = Number(user.perfectScores) || 0;
+  }
+
   var allTime = getLeaderboard_('all');
   var rank = 0;
   for (var j = 0; j < allTime.length; j++) {
@@ -358,9 +469,9 @@ function getUserProfile_(user) {
   }
 
   var stats = {
-    totalScore: user.totalScore,
-    totalQuizzes: user.totalQuizzes,
-    perfectScores: user.perfectScores,
+    totalScore: totalScore,
+    totalQuizzes: totalQuizzes,
+    perfectScores: perfectScores,
     streak: user.streak,
     rank: rank
   };
