@@ -15,7 +15,8 @@ var QUIZ_EMAIL_HANDLERS = [
   'sendDailyWelcomeEmailScheduled_',
   'sendDailyScoreboardEmailScheduled_',
   'sendWeeklyScoreboardEmailScheduled_',
-  'sendMonthlyScoreboardEmailScheduled_'
+  'sendMonthlyScoreboardEmailScheduled_',
+  'sendCustomQuizResultsEmailScheduled_'
 ];
 
 function getEmailBroadcastMode_() {
@@ -287,9 +288,15 @@ function buildPersonalizedScoreboardEmail_(period, recipientEmail, dateStr) {
 
 function sendEmailBroadcast_(buildEmailFn, options) {
   options = options || {};
-  var recipients = listEmailBroadcastRecipients_();
+  var recipients = options.recipients;
+  if (!recipients || !recipients.length) {
+    recipients = listEmailBroadcastRecipients_();
+  }
   if (!recipients.length) {
-    throw new Error('No email recipients found. Set email_test_recipient in Settings.');
+    throw new Error(
+      options.emptyMessage ||
+      'No email recipients found. Set email_test_recipient in Settings.'
+    );
   }
 
   var quotaBefore = -1;
@@ -410,6 +417,117 @@ function sendMonthlyScoreboardEmails_() {
   }, { personalize: true });
 }
 
+function buildCustomQuizResultsEmail_(customQuizId, recipientEmail) {
+  var doc = getCustomQuizDoc_(customQuizId);
+  if (!doc) throw new Error('Custom quiz not found: ' + customQuizId);
+
+  var leaderboard = buildCustomQuizLeaderboard_(doc.id);
+  var displayName = getDisplayNameForEmail_(recipientEmail);
+  var personalRank = null;
+  for (var i = 0; i < leaderboard.length; i++) {
+    if (String(leaderboard[i].email || '').toLowerCase() === String(recipientEmail || '').toLowerCase() ||
+        leaderboard[i].displayName === displayName) {
+      personalRank = leaderboard[i];
+      break;
+    }
+  }
+
+  var scopes = (doc.scopes || []).map(function(s) {
+    return s.label || s.quizId;
+  }).join(', ');
+  var shareUrl = customShareUrl_(doc.id);
+  var title = 'Custom quiz results — ' + (doc.title || doc.id);
+  var personal = '';
+  if (personalRank) {
+    personal = '<p style="background:#ecfdf5;border-radius:6px;padding:12px 16px;">' +
+      'Your result: <strong>#' + personalRank.rank + '</strong> with <strong>' + personalRank.score +
+      '</strong> / ' + (personalRank.totalQuestions || doc.questionCount || '?') +
+      ' point' + (personalRank.score === 1 ? '' : 's') + '.</p>';
+  }
+
+  var body =
+    '<p style="font-size:17px;">Hi ' + escapeHtml_(displayName) + ',</p>' +
+    personal +
+    '<p>Final results for <strong>' + escapeHtml_(doc.title || doc.id) + '</strong>.</p>' +
+    '<p style="color:#6b7280;font-size:14px;">Chapters: ' + escapeHtml_(scopes || '—') + '<br>' +
+    'Window: ' + escapeHtml_(doc.opensAt || '') + ' → ' + escapeHtml_(doc.closesAt || '') + '</p>' +
+    '<p>Here are the scores among participants:</p>' +
+    buildScoreboardTableHtml_(leaderboard, displayName) +
+    '<p style="margin-top:16px;font-size:14px;"><a href="' + escapeHtml_(shareUrl) + '">View this quiz online</a></p>';
+
+  return {
+    subject: title,
+    htmlBody: buildQuizEmailShell_(title, body)
+  };
+}
+
+/**
+ * Email final results to people who submitted this custom quiz only
+ * (never the full user list).
+ */
+function sendCustomQuizResultsEmails_(customQuizId, options) {
+  options = options || {};
+  var doc = getCustomQuizDoc_(customQuizId);
+  if (!doc) throw new Error('Custom quiz not found: ' + customQuizId);
+
+  var participants = listCustomQuizParticipantEmails_(doc.id);
+  var recipients = listCustomQuizResultRecipients_(doc.id, {
+    forceTestRecipient: options.forceTestRecipient === true
+  });
+
+  if (!recipients.length) {
+    throw new Error(
+      'No custom-quiz result recipients.\n' +
+      'Participants who submitted: ' + (participants.length || 0) + '\n' +
+      (getEmailBroadcastMode_() === 'test'
+        ? 'Test mode is on — the test recipient must have participated (or use the menu test send).'
+        : 'Nobody has submitted this quiz yet.')
+    );
+  }
+
+  var result = sendEmailBroadcast_(function(recipientEmail) {
+    return buildCustomQuizResultsEmail_(doc.id, recipientEmail);
+  }, {
+    personalize: true,
+    recipients: recipients,
+    emptyMessage: 'No participants to email for this custom quiz.'
+  });
+
+  if (!options.skipMarkSent) {
+    markCustomQuizResultsEmailSent_(doc);
+  }
+
+  result.participants = participants.length;
+  result.customQuizId = doc.id;
+  result.title = doc.title;
+  return result;
+}
+
+/** Find closed custom quizzes and email participants (once each). */
+function sendDueCustomQuizResultsEmails_() {
+  var due = listCustomQuizzesDueForResultsEmail_();
+  var summaries = [];
+  var totalSent = 0;
+
+  for (var i = 0; i < due.length; i++) {
+    var quiz = due[i];
+    try {
+      var result = sendCustomQuizResultsEmails_(quiz.id);
+      totalSent += result.sent || 0;
+      summaries.push(quiz.id + ': sent ' + result.sent + '/' + result.total);
+    } catch (err) {
+      summaries.push(quiz.id + ': ' + (err.message || err));
+      Logger.log('Custom quiz results email failed for ' + quiz.id + ': ' + (err.message || err));
+    }
+  }
+
+  return {
+    due: due.length,
+    sent: totalSent,
+    summaries: summaries
+  };
+}
+
 // --- Scheduled handlers (time-based triggers) ---
 
 function sendDailyWelcomeEmailScheduled_() {
@@ -449,6 +567,19 @@ function sendMonthlyScoreboardEmailScheduled_() {
     Logger.log('Monthly scoreboard email: sent ' + result.sent + '/' + result.total);
   } catch (err) {
     Logger.log('Monthly scoreboard email failed: ' + (err.message || err));
+  }
+}
+
+function sendCustomQuizResultsEmailScheduled_() {
+  try {
+    var result = sendDueCustomQuizResultsEmails_();
+    Logger.log(
+      'Custom quiz results email: due=' + result.due +
+      ' sent=' + result.sent +
+      ' details=' + (result.summaries || []).join(' | ')
+    );
+  } catch (err) {
+    Logger.log('Custom quiz results email failed: ' + (err.message || err));
   }
 }
 
@@ -500,15 +631,23 @@ function installQuizEmailTriggers() {
     .atHour(monthlyHour)
     .create();
 
+  // Custom quizzes: email participants after close (checks every hour).
+  ScriptApp.newTrigger('sendCustomQuizResultsEmailScheduled_')
+    .timeBased()
+    .everyHours(1)
+    .create();
+
   var mode = getEmailBroadcastMode_();
   showMessage_(
     'Quiz email triggers installed (' + CONFIG.TIMEZONE + ').\n\n' +
     'Daily welcome: ' + welcomeHour + ':00\n' +
     'Daily scoreboard: ' + dailyBoardHour + ':00\n' +
     'Weekly scoreboard: Saturday ' + weeklyHour + ':00\n' +
-    'Monthly scoreboard: last day of month ' + monthlyHour + ':00\n\n' +
+    'Monthly scoreboard: last day of month ' + monthlyHour + ':00\n' +
+    'Custom quiz results: every hour (participants only)\n\n' +
     'Broadcast mode: ' + mode +
-    (mode === 'test' ? ' → ' + getEmailTestRecipient_() : ' → all registered users') +
+    (mode === 'test' ? ' → ' + getEmailTestRecipient_() : ' → all registered users (daily emails)') +
+    '\nCustom quizzes always email participants only.' +
     '\n\nRun test sends from the menu before enabling "all".'
   );
 }
@@ -568,6 +707,61 @@ function testMonthlyScoreboardEmail() {
   runQuizEmailTest_('Monthly scoreboard', function() {
     return sendMonthlyScoreboardEmails_();
   });
+}
+
+function testCustomQuizResultsEmail() {
+  var ui = SpreadsheetApp.getUi();
+  var response = ui.prompt(
+    'Test custom quiz results email',
+    'Enter the custom quiz id (from the share link, e.g. cq_20260904-…).\n\n' +
+    'Sends only to email_test_recipient (for testing).\n' +
+    'Does not mark the quiz as “results emailed”.',
+    ui.ButtonSet.OK_CANCEL
+  );
+  if (response.getSelectedButton() !== ui.Button.OK) {
+    showMessage_('Cancelled.');
+    return;
+  }
+  var quizId = String(response.getResponseText() || '').trim();
+  if (!quizId) {
+    showMessage_('No quiz id entered.');
+    return;
+  }
+
+  try {
+    setSetting_('email_broadcast_mode', 'test');
+    var result = sendCustomQuizResultsEmails_(quizId, {
+      forceTestRecipient: true,
+      skipMarkSent: true
+    });
+    showMessage_(
+      'Custom quiz results test email dispatched.\n\n' +
+      formatEmailTestResult_('Custom quiz', result) + '\n' +
+      'Quiz: ' + (result.title || quizId) + '\n' +
+      'Participants who submitted: ' + (result.participants || 0) + '\n' +
+      'BCC: ' + (result.bcc ? result.bcc.join(', ') : getEmailTestRecipient_()) + '\n\n' +
+      'Production sends go only to people who submitted that quiz.'
+    );
+  } catch (err) {
+    showMessage_('Custom quiz results test failed:\n\n' + (err.message || err));
+  }
+}
+
+function sendDueCustomQuizResultsEmailsNow() {
+  try {
+    var result = sendDueCustomQuizResultsEmails_();
+    showMessage_(
+      'Custom quiz results email run complete.\n\n' +
+      'Closed quizzes due: ' + result.due + '\n' +
+      'Messages sent: ' + result.sent + '\n\n' +
+      (result.summaries && result.summaries.length
+        ? result.summaries.join('\n')
+        : 'Nothing to send.') +
+      '\n\nRecipients are always participants only (not all users).'
+    );
+  } catch (err) {
+    showMessage_('Send failed:\n\n' + (err.message || err));
+  }
 }
 
 function testAllQuizEmails() {

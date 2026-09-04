@@ -301,6 +301,8 @@ function onOpen() {
       .addItem('Test daily scoreboard email', 'testDailyScoreboardEmail')
       .addItem('Test weekly scoreboard email', 'testWeeklyScoreboardEmail')
       .addItem('Test monthly scoreboard email', 'testMonthlyScoreboardEmail')
+      .addItem('Test custom quiz results email', 'testCustomQuizResultsEmail')
+      .addItem('Send due custom quiz results emails', 'sendDueCustomQuizResultsEmailsNow')
       .addItem('Test all quiz emails', 'testAllQuizEmails')
       .addItem('Install daily/weekly email triggers', 'installQuizEmailTriggers')
       .addItem('Remove quiz email triggers', 'removeQuizEmailTriggers')

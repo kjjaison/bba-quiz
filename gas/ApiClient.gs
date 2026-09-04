@@ -33,6 +33,7 @@ function apiPing() {
     success: true,
     version: appConfig.version,
     testDatePicker: appConfig.testDatePicker,
+    customQuizzesEnabled: appConfig.customQuizzesEnabled,
     time: new Date().toISOString()
   };
 }
@@ -75,4 +76,76 @@ function apiProfile(token) {
 function apiHistory(token) {
   var user = validateSession_(token);
   return { success: true, history: getUserQuizHistory_(user) };
+}
+
+function apiCustomCatalog(token, language) {
+  var user = validateSession_(token);
+  requireCustomQuizAdmin_(user);
+  return { success: true, catalog: listChapterCatalog_(language), admin: true };
+}
+
+function apiCustomList(token) {
+  var user = validateSession_(token);
+  var data = listCustomQuizzesForUser_(user);
+  data.success = true;
+  return data;
+}
+
+function apiCustomCreate(token, title, scopes, questionCount, opensAt, closesAt, language) {
+  var user = validateSession_(token);
+  var data = createCustomQuizDraft_(user, {
+    title: title,
+    scopes: scopes,
+    questionCount: questionCount,
+    opensAt: opensAt,
+    closesAt: closesAt,
+    language: language
+  });
+  data.success = true;
+  return data;
+}
+
+function apiCustomShuffle(token, customQuizId) {
+  var user = validateSession_(token);
+  var data = shuffleCustomQuizQuestions_(user, customQuizId);
+  data.success = true;
+  return data;
+}
+
+function apiCustomPublish(token, customQuizId) {
+  var user = validateSession_(token);
+  var data = publishCustomQuiz_(user, customQuizId);
+  data.success = true;
+  return data;
+}
+
+function apiCustomGet(token, customQuizId, language) {
+  var user = validateSession_(token);
+  return {
+    success: true,
+    quiz: getCustomQuizForUser_(user, customQuizId, language)
+  };
+}
+
+function apiCustomSubmit(token, customQuizId, answers, language) {
+  var user = validateSession_(token);
+  return {
+    success: true,
+    result: submitCustomQuiz_(user, customQuizId, answers, language)
+  };
+}
+
+function apiCustomResults(token, customQuizId) {
+  var user = validateSession_(token);
+  var data = getCustomQuizResults_(user, customQuizId);
+  data.success = true;
+  return data;
+}
+
+function apiCustomSendResults(token, customQuizId) {
+  var user = validateSession_(token);
+  requireCustomQuizAdmin_(user);
+  var data = sendCustomQuizResultsEmails_(customQuizId);
+  data.success = true;
+  return data;
 }

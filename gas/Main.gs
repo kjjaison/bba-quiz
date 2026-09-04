@@ -47,11 +47,11 @@ function normalizeApiParams_(params) {
   for (var key in params) {
     if (!params.hasOwnProperty(key)) continue;
     var val = params[key];
-    if (key === 'answers' && typeof val === 'string') {
+    if ((key === 'answers' || key === 'scopes' || key === 'payload') && typeof val === 'string') {
       try {
-        result.answers = JSON.parse(val);
+        result[key] = JSON.parse(val);
       } catch (err) {
-        result.answers = {};
+        result[key] = key === 'scopes' ? [] : {};
       }
     } else if (key === 'rememberMe') {
       result.rememberMe = val === true || val === 'true' || val === '1';
@@ -165,11 +165,77 @@ function handleApi_(e) {
           history: getUserQuizHistory_(historyUser)
         });
 
+      case 'customCatalog':
+        var catalogUser = validateSession_(token);
+        requireCustomQuizAdmin_(catalogUser);
+        return successResponse_({
+          catalog: listChapterCatalog_(params.language),
+          admin: true
+        });
+
+      case 'customList':
+        var listUser = validateSession_(token);
+        return successResponse_(listCustomQuizzesForUser_(listUser));
+
+      case 'customCreate':
+        var createUser = validateSession_(token);
+        return successResponse_(createCustomQuizDraft_(createUser, {
+          title: params.title,
+          scopes: params.scopes,
+          questionCount: params.questionCount,
+          opensAt: params.opensAt,
+          closesAt: params.closesAt,
+          previewLanguage: params.previewLanguage || params.language
+        }));
+
+      case 'customShuffle':
+        var shuffleUser = validateSession_(token);
+        return successResponse_(shuffleCustomQuizQuestions_(
+          shuffleUser,
+          params.customQuizId || params.id,
+          params.previewLanguage || params.language
+        ));
+
+      case 'customPublish':
+        var publishUser = validateSession_(token);
+        return successResponse_(publishCustomQuiz_(publishUser, params.customQuizId || params.id));
+
+      case 'customGet':
+        var getUser = validateSession_(token);
+        return successResponse_({
+          quiz: getCustomQuizForUser_(getUser, params.customQuizId || params.id || params.q, params.language)
+        });
+
+      case 'customSubmit':
+        var customSubmitUser = validateSession_(token);
+        return successResponse_({
+          result: submitCustomQuiz_(
+            customSubmitUser,
+            params.customQuizId || params.id || params.q,
+            params.answers || {},
+            params.language
+          )
+        });
+
+      case 'customResults':
+        var resultsUser = validateSession_(token);
+        return successResponse_(getCustomQuizResults_(resultsUser, params.customQuizId || params.id || params.q));
+
+      case 'customSendResults':
+        var sendResultsUser = validateSession_(token);
+        requireCustomQuizAdmin_(sendResultsUser);
+        return successResponse_(
+          sendCustomQuizResultsEmails_(params.customQuizId || params.id || params.q, {
+            skipMarkSent: params.skipMarkSent === true || params.skipMarkSent === 'true'
+          })
+        );
+
       case 'ping':
         var appConfig = getAppPublicConfig_();
         return successResponse_({
           version: appConfig.version,
           testDatePicker: appConfig.testDatePicker,
+          customQuizzesEnabled: appConfig.customQuizzesEnabled,
           time: new Date().toISOString()
         });
 

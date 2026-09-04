@@ -42,7 +42,7 @@ var CONFIG = {
   SCHEDULE_START_DATE: '2026-07-08',
 
   // Bump on each release — keep in sync with mobile/lib/config/app_config.dart appVersion
-  APP_VERSION: '2026-09-02.1',
+  APP_VERSION: '2026-09-04.2',
 
   // Quiz question languages (sheet per language, same quiz_id across sheets)
   DEFAULT_LANGUAGE: 'en',
@@ -75,6 +75,11 @@ var CONFIG = {
 
   // Testing: allow picking quiz date in UI. Override via Settings → test_date_picker | true/false
   TEST_DATE_PICKER: false,
+
+  // Custom quizzes (multi-chapter). Keep false until tested.
+  // Override via Settings → custom_quizzes_enabled | true/false
+  // Admins: Settings → custom_quiz_admin_emails | a@x.com,b@y.com
+  CUSTOM_QUIZZES_ENABLED: false,
 
   // Badge definitions (earned automatically based on stats)
   BADGE_RULES: [
@@ -266,7 +271,8 @@ function sheetDateFromYmd_(ymd) {
 function getAppPublicConfig_() {
   return {
     version: CONFIG.APP_VERSION,
-    testDatePicker: isTestDatePickerEnabled_()
+    testDatePicker: isTestDatePickerEnabled_(),
+    customQuizzesEnabled: isCustomQuizzesEnabled_()
   };
 }
 

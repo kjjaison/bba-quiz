@@ -145,6 +145,25 @@ Re-submit of a locked quiz is rejected.
 
 After submit, scoreboard and history should show new scores immediately (Firestore). If stored `users.totalScore` is stale, All Time still stays correct because it sums submissions. To repair stored totals/streaks, run **Recalculate user stats from submissions**.
 
+### 5.5 Custom quizzes (separate from daily)
+
+Multi-chapter quizzes with an open/close window. **Not linked from the main site until enabled.**
+
+| Piece | Detail |
+|-------|--------|
+| Flag | Settings `custom_quizzes_enabled` (default off) — when on, main site can advertise listing later |
+| Admins | Settings `custom_quiz_admin_emails` (comma-separated) |
+| Admin UI | Hosted `admin-custom.html` — pick chapters, N questions, window, shuffle, publish |
+| Take UI | Hosted `custom.html?q={id}` — one question per page; one attempt; scores in `customSubmissions` only |
+| Firestore | `customQuizzes/{id}`, `customSubmissions/{email}_cq_{id}` (no Sheet tabs for these) |
+| Content | Random sample from selected chapters; only questions present in **both EN and ML**; frozen `questionRefs`; take UI language switcher |
+| Languages | English and Malayalam available for every custom quiz (same as daily) |
+| Scoring | Does **not** update daily streak / All Time / profile totals |
+| Results email | After close: emailed **only to participants** who submitted (never all users). Hourly trigger + menu. |
+
+**API:** `customCatalog`, `customList`, `customCreate`, `customShuffle`, `customPublish`, `customGet`, `customSubmit`, `customResults`  
+**Code:** `gas/CustomQuiz.gs`, `web-frontend/admin-custom.html`, `web-frontend/custom.html`
+
 ---
 
 ## 6. Quiz load → score → review (detail)
@@ -201,7 +220,9 @@ From the Google Sheet menu **BBA Quiz**:
 | Authorize Firebase access / Test connection | OAuth / connectivity |
 | Authorize email / Test quiz email | MailApp permissions |
 | Test daily welcome / scoreboard emails | Send test to `email_test_recipient` |
-| Install daily/weekly email triggers | Scheduled welcome + scoreboards |
+| Test custom quiz results email | Prompt for quiz id; BCC test recipient only |
+| Send due custom quiz results emails | Participants-only for closed quizzes |
+| Install daily/weekly email triggers | Scheduled welcome + scoreboards + custom results (hourly) |
 | Enable email broadcast to all users | Switch from test to all users |
 | Show Google Sites embed URL | Embed + health check URLs |
 
@@ -226,6 +247,10 @@ Hosted UI uses `window.BBA_API_URL` (usually the `/exec` URL or `/api` proxy).
 | `submit` | token | Score and lock |
 | `leaderboard` | token | Rankings |
 | `history` | token | Signed-in user’s daily scores |
+| `customCatalog` | token (admin) | Chapters available for custom quizzes |
+| `customList` | token | List custom quizzes |
+| `customCreate` / `customShuffle` / `customPublish` | token (admin) | Draft / reshuffle / publish |
+| `customGet` / `customSubmit` / `customResults` | token | Take / submit / results |
 | `profile` | token | Stats + badges |
 | `ping` | — | Version + public config |
 
@@ -258,6 +283,8 @@ Keep `mobile/lib/config/app_config.dart` `appVersion` in sync with `APP_VERSION`
 | `firestore_auth_mode` | `user` |
 | `quiz_data_source` | `firestore` |
 | `test_date_picker` | `true` / `false` |
+| `custom_quizzes_enabled` | `false` until ready (main-site listing gate) |
+| `custom_quiz_admin_emails` | `admin@bbadublin.com,other@…` |
 | `email_broadcast_mode` | `test` (one recipient) or `all` |
 | `email_test_recipient` | `kjjaison@gmail.com` |
 | `quiz_public_url` | `https://bbadublin-quiz.web.app/` |
@@ -302,8 +329,9 @@ More: [SETUP.md](./SETUP.md), [FLUTTER.md](./FLUTTER.md), [SHEET-TEMPLATE.md](./
 | `gas/FirestoreSync.gs` | Manual Sheet → Firestore questions sync |
 | `gas/FirestoreRuntime.gs` | Runtime FS users/submissions; migrate; recalculate |
 | `gas/FirestoreBackup.gs` | Firestore → Sheet backup + trigger |
+| `gas/CustomQuiz.gs` | Custom multi-chapter quizzes |
 | `gas/index.html` | Canonical web UI source |
-| `web-frontend/` | Hosted static UI (`app.js`, `styles.css`, `config.js`) |
+| `web-frontend/` | Hosted static UI (`app.js`, `custom.html`, `admin-custom.html`, …) |
 | `mobile/` | Flutter shell |
 | `functions/` | Optional proxy / Blaze sync |
 | `scripts/sync-web-frontend.ps1` | Split `gas/index.html` → hosting files |
@@ -322,4 +350,4 @@ More: [SETUP.md](./SETUP.md), [FLUTTER.md](./FLUTTER.md), [SHEET-TEMPLATE.md](./
 
 ---
 
-*Last structural update: `2026-09-02.1` — All Time scoreboard sums submissions; History tab shows each user’s daily scores.*
+*Last structural update: `2026-09-04.1` — Custom quizzes (admin + shareable take page) behind Settings flags; separate from daily scores.*

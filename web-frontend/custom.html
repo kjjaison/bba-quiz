@@ -1,0 +1,454 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="bba-app-version" content="2026-09-04.2" />
+  <title>Custom Quiz — BBA Dublin</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./styles.css?v=2026-09-04.2" />
+  <style>
+    .quiz-meta {
+      background: var(--bg);
+      border-radius: 8px;
+      padding: 0.85rem 1rem;
+      margin-bottom: 1rem;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+    }
+    .option-btn {
+      display: block;
+      width: 100%;
+      text-align: left;
+      margin: 0.4rem 0;
+      padding: 0.75rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fff;
+      cursor: pointer;
+      font: inherit;
+    }
+    .option-btn.selected { border-color: var(--primary-light); background: #ebf8ff; }
+    .option-btn.correct { border-color: var(--success); background: #f0fff4; }
+    .option-btn.incorrect { border-color: var(--error); background: #fff5f5; }
+    .question-card { margin-bottom: 0.5rem; }
+    .question-card h3 { font-size: 1.05rem; margin-bottom: 0.35rem; line-height: 1.45; }
+    .chapter-tag { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.5rem; }
+    .nav-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; align-items: center; }
+    .nav-row.quiz-nav-end { justify-content: flex-end; }
+    .nav-row.quiz-nav { justify-content: space-between; }
+    .progress-bar {
+      height: 6px;
+      background: var(--border);
+      border-radius: 999px;
+      overflow: hidden;
+      margin: 0.75rem 0 1rem;
+    }
+    .progress-bar > span {
+      display: block;
+      height: 100%;
+      background: var(--primary-light, var(--primary));
+      border-radius: 999px;
+      transition: width 0.2s ease;
+    }
+    .progress-label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 0.25rem;
+    }
+  </style>
+</head>
+<body>
+  <header class="header">
+    <h1>BBA Dublin Bible Quiz</h1>
+    <p id="header-subtitle">Custom quiz</p>
+  </header>
+
+  <div class="container">
+    <div id="alert" class="alert hidden"></div>
+
+    <div id="auth-screen" class="card">
+      <h2 style="margin-bottom:0.75rem;">Sign in to take this quiz</h2>
+      <p id="auth-hint" style="color:var(--text-muted);margin-bottom:1rem;font-size:0.9rem;"></p>
+      <div class="form-group">
+        <label for="login-email">Email</label>
+        <input type="email" id="login-email" autocomplete="username">
+      </div>
+      <div class="form-group">
+        <label for="login-password">Password</label>
+        <input type="password" id="login-password" autocomplete="current-password">
+      </div>
+      <label style="display:flex;gap:0.5rem;align-items:center;margin-bottom:1rem;">
+        <input type="checkbox" id="login-remember"> Remember me
+      </label>
+      <button class="btn" id="btn-login">Sign in</button>
+      <p style="margin-top:1rem;font-size:0.9rem;">
+        Need an account? <a href="./index.html">Register on the main quiz site</a>, then return here.
+      </p>
+    </div>
+
+    <div id="app-screen" class="hidden">
+      <div class="card" style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;align-items:center;">
+        <div>
+          <strong id="user-name"></strong>
+          <div style="font-size:0.85rem;color:var(--text-muted);">One attempt only · separate from daily scores</div>
+        </div>
+        <div class="nav-row" style="margin:0;">
+          <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.85rem;">
+            <span>Language</span>
+            <select id="lang-select" class="lang-select">
+              <option value="en">English</option>
+              <option value="ml">Malayalam</option>
+            </select>
+          </label>
+          <a class="btn btn-outline btn-sm" href="./index.html">Daily quiz</a>
+          <button class="btn btn-outline btn-sm" id="btn-logout">Log out</button>
+        </div>
+      </div>
+
+      <div id="quiz-panel" class="card">
+        <div class="loading"><div class="spinner"></div>Loading quiz...</div>
+      </div>
+
+      <div id="results-panel" class="card hidden"></div>
+    </div>
+  </div>
+
+  <script src="./config.js?v=2026-09-04.2"></script>
+  <script src="./custom-api.js?v=2026-09-04.2"></script>
+  <script>
+    (function () {
+      const { API, loadSession, saveSession, clearSession, escapeHtml } = window.BbaCustom;
+      const params = new URLSearchParams(location.search);
+      const quizId = params.get('q') || params.get('id') || '';
+      let token = null;
+      let user = null;
+      let quiz = null;
+      let selected = {};
+      let currentQuestionIndex = 0;
+      const LANG_KEY = 'bba_quiz_language';
+
+      function getLanguage() {
+        const sel = document.getElementById('lang-select');
+        return (sel && sel.value) || localStorage.getItem(LANG_KEY) || 'en';
+      }
+
+      function setLanguage(lang) {
+        const next = lang === 'ml' ? 'ml' : 'en';
+        localStorage.setItem(LANG_KEY, next);
+        const sel = document.getElementById('lang-select');
+        if (sel) sel.value = next;
+      }
+
+      function showAlert(message, type) {
+        const el = document.getElementById('alert');
+        el.textContent = message;
+        el.className = 'alert alert-' + (type || 'error');
+        el.classList.remove('hidden');
+        setTimeout(() => el.classList.add('hidden'), 6000);
+      }
+
+      function windowLabel(status) {
+        if (status === 'open') return 'Open now';
+        if (status === 'scheduled') return 'Not open yet';
+        if (status === 'closed') return 'Closed';
+        return status || '';
+      }
+
+      function answeredCount() {
+        const questions = (quiz && quiz.questions) || [];
+        return questions.filter((q) => !!selected[q.id]).length;
+      }
+
+      function renderQuiz() {
+        const panel = document.getElementById('quiz-panel');
+        if (!quiz) {
+          panel.innerHTML = '<div class="alert alert-error">Quiz not found.</div>';
+          return;
+        }
+
+        document.getElementById('header-subtitle').textContent = quiz.title || 'Custom quiz';
+        const scopes = (quiz.scopes || []).map((s) => s.label || s.quizId).join(', ');
+        let html = '<h2 style="margin-bottom:0.5rem;">' + escapeHtml(quiz.title) + '</h2>';
+        html += '<div class="quiz-meta">' +
+          '<div><strong>Chapters:</strong> ' + escapeHtml(scopes || '—') + '</div>' +
+          '<div><strong>Window:</strong> ' + escapeHtml(quiz.opensAt) + ' → ' + escapeHtml(quiz.closesAt) +
+          ' (' + escapeHtml(windowLabel(quiz.windowStatus)) + ')</div>' +
+          '<div><strong>Questions:</strong> ' + (quiz.questionCount || 0) + ' · one attempt</div>' +
+          '</div>';
+
+        if (quiz.submitted) {
+          html += '<div class="score-result" style="text-align:center;margin:1rem 0;">' +
+            '<div class="score-circle" style="margin:0 auto 1rem;"><div class="points">' + quiz.score +
+            '</div><div class="label">points</div></div>' +
+            '<p>You scored ' + quiz.score + ' / ' + quiz.totalQuestions + '</p></div>';
+        } else if (!quiz.canTake) {
+          html += '<p style="color:var(--text-muted);">' +
+            (quiz.windowStatus === 'scheduled'
+              ? 'This quiz opens at ' + escapeHtml(quiz.opensAt) + '.'
+              : quiz.windowStatus === 'closed'
+                ? 'This quiz is closed.'
+                : 'You cannot take this quiz right now.') +
+            '</p>';
+          if (quiz.windowStatus === 'closed') {
+            html += '<button class="btn btn-outline" id="btn-view-results">View results</button>';
+          }
+          panel.innerHTML = html;
+          const btn = document.getElementById('btn-view-results');
+          if (btn) btn.addEventListener('click', loadResults);
+          return;
+        }
+
+        const questions = quiz.questions || [];
+        const total = questions.length;
+        const locked = !!quiz.submitted;
+
+        if (!total) {
+          html += '<p style="color:var(--text-muted);">No questions in this quiz.</p>';
+          panel.innerHTML = html;
+          return;
+        }
+
+        if (currentQuestionIndex >= total) currentQuestionIndex = total - 1;
+        if (currentQuestionIndex < 0) currentQuestionIndex = 0;
+
+        const q = questions[currentQuestionIndex];
+        const num = currentQuestionIndex + 1;
+        const pct = Math.round((num / total) * 100);
+        const done = answeredCount();
+
+        html += '<div class="progress-label">Question ' + num + ' of ' + total;
+        if (!locked) html += ' · ' + done + ' answered';
+        html += '</div>';
+        html += '<div class="progress-bar" aria-hidden="true"><span style="width:' + pct + '%"></span></div>';
+
+        html += '<div class="question-card" data-qid="' + q.id + '">';
+        html += '<div class="chapter-tag">' + escapeHtml(q.chapter || '') + '</div>';
+        html += '<h3>' + escapeHtml(q.question) + '</h3>';
+        ['A', 'B', 'C', 'D'].forEach((letter) => {
+          const text = q.options && q.options[letter];
+          if (!text) return;
+          let cls = 'option-btn';
+          const chosen = locked ? (quiz.answers && quiz.answers[String(q.id)]) : selected[q.id];
+          if (chosen === letter) cls += ' selected';
+          if (locked && quiz.correctAnswers) {
+            const correct = quiz.correctAnswers[String(q.id)];
+            if (letter === correct) cls += ' correct';
+            else if (chosen === letter && letter !== correct) cls += ' incorrect';
+          }
+          html += '<button type="button" class="' + cls + '" data-qid="' + q.id + '" data-letter="' + letter + '"' +
+            (locked ? ' disabled' : '') + '>' + letter + '. ' + escapeHtml(text) + '</button>';
+        });
+        html += '</div>';
+
+        const navClass = currentQuestionIndex > 0 ? 'nav-row quiz-nav' : 'nav-row quiz-nav-end';
+        html += '<div class="' + navClass + '">';
+        if (currentQuestionIndex > 0) {
+          html += '<button type="button" class="btn btn-outline" id="btn-prev-quiz">Previous</button>';
+        }
+        if (currentQuestionIndex < total - 1) {
+          html += '<button type="button" class="btn" id="btn-next-quiz">Next</button>';
+        } else if (!locked && quiz.canTake) {
+          html += '<button type="button" class="btn" id="btn-submit">Submit answers</button>';
+        }
+        html += '</div>';
+
+        if (!locked && quiz.canTake && currentQuestionIndex < total - 1 && done === total) {
+          html += '<div class="nav-row"><button type="button" class="btn btn-outline" id="btn-submit-early">Submit all answers</button></div>';
+        }
+
+        if (quiz.windowStatus === 'closed' || locked) {
+          html += '<div class="nav-row"><button class="btn btn-outline" id="btn-view-results">Leaderboard</button></div>';
+        }
+
+        panel.innerHTML = html;
+
+        panel.querySelectorAll('.option-btn:not([disabled])').forEach((btn) => {
+          btn.addEventListener('click', () => {
+            const qid = Number(btn.dataset.qid);
+            selected[qid] = btn.dataset.letter;
+            renderQuiz();
+          });
+        });
+
+        const prevBtn = document.getElementById('btn-prev-quiz');
+        if (prevBtn) {
+          prevBtn.addEventListener('click', () => {
+            currentQuestionIndex--;
+            renderQuiz();
+          });
+        }
+        const nextBtn = document.getElementById('btn-next-quiz');
+        if (nextBtn) {
+          nextBtn.addEventListener('click', () => {
+            currentQuestionIndex++;
+            renderQuiz();
+          });
+        }
+
+        const submitBtn = document.getElementById('btn-submit');
+        if (submitBtn) submitBtn.addEventListener('click', submitQuiz);
+        const submitEarly = document.getElementById('btn-submit-early');
+        if (submitEarly) submitEarly.addEventListener('click', submitQuiz);
+        const resultsBtn = document.getElementById('btn-view-results');
+        if (resultsBtn) resultsBtn.addEventListener('click', loadResults);
+      }
+
+      async function loadQuiz() {
+        const panel = document.getElementById('quiz-panel');
+        panel.innerHTML = '<div class="loading"><div class="spinner"></div>Loading quiz...</div>';
+        try {
+          const res = await API.call('customGet', {
+            token,
+            customQuizId: quizId,
+            language: getLanguage()
+          });
+          quiz = res.quiz;
+          selected = {};
+          currentQuestionIndex = 0;
+          if (quiz.answers) {
+            Object.keys(quiz.answers).forEach((k) => { selected[k] = quiz.answers[k]; });
+          }
+          if (quiz.language) setLanguage(quiz.language);
+          renderQuiz();
+        } catch (err) {
+          panel.innerHTML = '<div class="alert alert-error">' + escapeHtml(err.message) + '</div>';
+        }
+      }
+
+      async function reloadQuizLanguage() {
+        if (!token || !quizId) return;
+        const keepSelected = Object.assign({}, selected);
+        const keepIndex = currentQuestionIndex;
+        try {
+          const res = await API.call('customGet', {
+            token,
+            customQuizId: quizId,
+            language: getLanguage()
+          });
+          quiz = res.quiz;
+          selected = keepSelected;
+          currentQuestionIndex = keepIndex;
+          renderQuiz();
+        } catch (err) {
+          showAlert(err.message || 'Could not switch language', 'error');
+        }
+      }
+
+      async function submitQuiz() {
+        const btn = document.getElementById('btn-submit');
+        if (btn) btn.disabled = true;
+        try {
+          const answers = {};
+          (quiz.questions || []).forEach((q) => {
+            if (selected[q.id]) answers[String(q.id)] = selected[q.id];
+          });
+          const res = await API.call('customSubmit', {
+            token,
+            customQuizId: quizId,
+            answers,
+            language: getLanguage()
+          });
+          quiz.submitted = true;
+          quiz.canTake = false;
+          quiz.score = res.result.score;
+          quiz.totalQuestions = res.result.totalQuestions;
+          quiz.answers = res.result.answers;
+          quiz.correctAnswers = res.result.correctAnswers;
+          quiz.questions = res.result.questions || quiz.questions;
+          showAlert('Submitted! Score: ' + res.result.score + ' / ' + res.result.totalQuestions, 'success');
+          renderQuiz();
+        } catch (err) {
+          showAlert(err.message || 'Submit failed', 'error');
+          if (btn) btn.disabled = false;
+        }
+      }
+
+      async function loadResults() {
+        const panel = document.getElementById('results-panel');
+        panel.classList.remove('hidden');
+        panel.innerHTML = '<div class="loading"><div class="spinner"></div>Loading results...</div>';
+        try {
+          const res = await API.call('customResults', { token, customQuizId: quizId });
+          let html = '<h3>Results</h3>';
+          if (res.mine) {
+            html += '<p>Your score: <strong>' + res.mine.score + ' / ' + res.mine.totalQuestions + '</strong></p>';
+          }
+          const rows = res.leaderboard || [];
+          if (!rows.length) {
+            html += '<p style="color:var(--text-muted);">No submissions yet.</p>';
+          } else {
+            html += '<table class="leaderboard-table"><thead><tr><th>Rank</th><th>Name</th><th>Score</th></tr></thead><tbody>';
+            rows.forEach((row) => {
+              html += '<tr><td>' + row.rank + '</td><td>' + escapeHtml(row.displayName) +
+                '</td><td><strong>' + row.score + '</strong></td></tr>';
+            });
+            html += '</tbody></table>';
+          }
+          panel.innerHTML = html;
+        } catch (err) {
+          panel.innerHTML = '<div class="alert alert-error">' + escapeHtml(err.message) + '</div>';
+        }
+      }
+
+      function showApp() {
+        document.getElementById('auth-screen').classList.add('hidden');
+        document.getElementById('app-screen').classList.remove('hidden');
+        document.getElementById('user-name').textContent = user.displayName || user.email;
+      }
+
+      async function boot() {
+        if (!quizId) {
+          document.getElementById('auth-hint').textContent = 'Missing quiz id. Use a share link from the admin page.';
+          document.getElementById('auth-screen').innerHTML =
+            '<div class="alert alert-error">Missing quiz link. Ask your admin for the custom quiz URL.</div>' +
+            '<p><a href="./index.html">Go to daily quiz</a></p>';
+          return;
+        }
+        setLanguage(localStorage.getItem(LANG_KEY) || 'en');
+        document.getElementById('auth-hint').textContent = 'Quiz id: ' + quizId;
+        const session = loadSession();
+        token = session.token;
+        user = session.user;
+        if (!token || !user) return;
+        showApp();
+        await loadQuiz();
+      }
+
+      document.getElementById('lang-select').addEventListener('change', (e) => {
+        setLanguage(e.target.value);
+        if (token && user) reloadQuizLanguage();
+      });
+
+      document.getElementById('btn-login').addEventListener('click', async () => {
+        const btn = document.getElementById('btn-login');
+        btn.disabled = true;
+        try {
+          const remember = document.getElementById('login-remember').checked;
+          const res = await API.call('login', {
+            email: document.getElementById('login-email').value.trim(),
+            password: document.getElementById('login-password').value,
+            rememberMe: remember
+          });
+          user = res.user;
+          token = user.token;
+          saveSession(token, user, remember);
+          showApp();
+          await loadQuiz();
+        } catch (err) {
+          showAlert(err.message || 'Login failed', 'error');
+        }
+        btn.disabled = false;
+      });
+
+      document.getElementById('btn-logout').addEventListener('click', () => {
+        clearSession();
+        location.reload();
+      });
+
+      boot();
+    })();
+  </script>
+</body>
+</html>
