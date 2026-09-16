@@ -289,6 +289,18 @@ function validateQuizReady_(quizId, book, chapter, language) {
 }
 
 function getTodayQuiz_(user, language, requestedDate) {
+  if (isMaintenanceMode_()) {
+    return {
+      date: resolveQuizDate_(requestedDate),
+      available: false,
+      maintenance: true,
+      maintenanceMode: true,
+      maintenanceMessage: getMaintenanceMessage_(),
+      testDatePicker: isTestDatePickerEnabled_(),
+      message: getMaintenanceMessage_()
+    };
+  }
+
   var lang = normalizeLanguage_(language);
   var today = todayDate_();
   var quizDate = resolveQuizDate_(requestedDate);
@@ -1037,6 +1049,7 @@ function attachAnswerMapToQuestions_(questions, answerMap) {
 }
 
 function submitQuiz_(user, answers, language, requestedDate) {
+  requireQuizzesOpen_();
   var lang = normalizeLanguage_(language);
   var today = todayDate_();
   var quizDate = resolveQuizDate_(requestedDate);

@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="bba-app-version" content="2026-09-04.2" />
+  <meta name="bba-app-version" content="2026-09-16.1" />
   <title>Custom Quiz — BBA Dublin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=2026-09-04.2" />
+  <link rel="stylesheet" href="./styles.css?v=2026-09-16.1" />
   <style>
     .quiz-meta {
       background: var(--bg);
@@ -60,6 +60,7 @@
   </style>
 </head>
 <body>
+  <div id="maintenance-banner" class="maintenance-banner hidden" role="status"></div>
   <header class="header">
     <h1>BBA Dublin Bible Quiz</h1>
     <p id="header-subtitle">Custom quiz</p>
@@ -115,8 +116,8 @@
     </div>
   </div>
 
-  <script src="./config.js?v=2026-09-04.2"></script>
-  <script src="./custom-api.js?v=2026-09-04.2"></script>
+  <script src="./config.js?v=2026-09-16.1"></script>
+  <script src="./custom-api.js?v=2026-09-16.1"></script>
   <script>
     (function () {
       const { API, loadSession, saveSession, clearSession, escapeHtml } = window.BbaCustom;
@@ -147,6 +148,27 @@
         el.className = 'alert alert-' + (type || 'error');
         el.classList.remove('hidden');
         setTimeout(() => el.classList.add('hidden'), 6000);
+      }
+
+      function syncMaintenanceBanner(enabled, message) {
+        const banner = document.getElementById('maintenance-banner');
+        if (!banner) return;
+        if (enabled === true) {
+          banner.textContent = message || 'We’re upgrading the quiz for a short while. Today’s quiz and daily emails are paused — thank you for your patience. We’ll be back soon!';
+          banner.classList.remove('hidden');
+        } else {
+          banner.textContent = '';
+          banner.classList.add('hidden');
+        }
+      }
+
+      async function loadPublicConfig() {
+        try {
+          const ping = await API.call('ping', {});
+          syncMaintenanceBanner(ping.maintenanceMode === true, ping.maintenanceMessage);
+        } catch (err) {
+          syncMaintenanceBanner(false);
+        }
       }
 
       function windowLabel(status) {
@@ -399,6 +421,7 @@
       }
 
       async function boot() {
+        await loadPublicConfig();
         if (!quizId) {
           document.getElementById('auth-hint').textContent = 'Missing quiz id. Use a share link from the admin page.';
           document.getElementById('auth-screen').innerHTML =

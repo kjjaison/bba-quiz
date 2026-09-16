@@ -115,14 +115,24 @@ One row per user per day. Created automatically on submit.
 
 ## Settings
 
-Optional key-value configuration (for future use).
+Optional key-value configuration. The app already uses this tab for live flags (test date picker, custom quizzes, emails, **maintenance mode**).
 
 | Column | Header | Type | Description |
 |--------|--------|------|-------------|
 | A | key | Text | Setting name |
 | B | value | Text | Setting value |
 
-Example future settings: `quiz_reset_hour`, `points_per_question`, `maintenance_mode`.
+| key | value example | Effect |
+|-----|----------------|--------|
+| `test_date_picker` | `true` / `false` | Show a date picker so testers can load other days |
+| `maintenance_mode` | `true` / `false` | Pause taking quizzes and skip scheduled quiz emails; show a site banner |
+| `maintenance_message` | `We’ll be back Sunday morning — thank you for waiting!` | Optional banner text (default copy is used if blank) |
+| `custom_quizzes_enabled` | `true` / `false` | Gate custom quizzes |
+| `custom_quiz_admin_emails` | `a@x.com,b@y.com` | Who can open `admin-custom.html` |
+| `email_broadcast_mode` | `test` / `all` | One test mailbox vs all users |
+| `email_test_recipient` | `kjjaison@gmail.com` | Test mailbox |
+
+**Pause the live quiz:** Sheet menu **BBA Quiz → Enable maintenance mode**, or add `maintenance_mode` \| `true`. Students should refresh. To resume: **Disable maintenance mode** (or set `false`). Login, scoreboard, and OTP emails keep working.
 
 ---
 

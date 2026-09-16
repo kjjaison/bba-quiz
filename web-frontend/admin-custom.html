@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="bba-app-version" content="2026-09-04.2" />
+  <meta name="bba-app-version" content="2026-09-16.1" />
   <title>Custom Quiz Admin — BBA Dublin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=2026-09-04.2" />
+  <link rel="stylesheet" href="./styles.css?v=2026-09-16.1" />
   <style>
     .admin-layout { max-width: 900px; }
     .chapter-grid {
@@ -90,6 +90,7 @@
   </style>
 </head>
 <body>
+  <div id="maintenance-banner" class="maintenance-banner hidden" role="status"></div>
   <header class="header">
     <h1>Custom Quiz Admin</h1>
     <p>Create multi-chapter quizzes with a date window</p>
@@ -195,8 +196,8 @@
     </div>
   </div>
 
-  <script src="./config.js?v=2026-09-04.2"></script>
-  <script src="./custom-api.js?v=2026-09-04.2"></script>
+  <script src="./config.js?v=2026-09-16.1"></script>
+  <script src="./custom-api.js?v=2026-09-16.1"></script>
   <script>
     (function () {
       const { API, loadSession, saveSession, clearSession, escapeHtml } = window.BbaCustom;
@@ -211,6 +212,18 @@
         el.className = 'alert alert-' + (type || 'error');
         el.classList.remove('hidden');
         setTimeout(() => el.classList.add('hidden'), 6000);
+      }
+
+      function syncMaintenanceBanner(enabled, message) {
+        const banner = document.getElementById('maintenance-banner');
+        if (!banner) return;
+        if (enabled === true) {
+          banner.textContent = message || 'We’re upgrading the quiz for a short while. Today’s quiz and daily emails are paused — thank you for your patience. We’ll be back soon!';
+          banner.classList.remove('hidden');
+        } else {
+          banner.textContent = '';
+          banner.classList.add('hidden');
+        }
       }
 
       function toLocalInputValue(date) {
@@ -243,6 +256,7 @@
       async function checkBackendReady() {
         try {
           const ping = await API.call('ping', {});
+          syncMaintenanceBanner(ping && ping.maintenanceMode === true, ping && ping.maintenanceMessage);
           if (!ping || typeof ping.customQuizzesEnabled === 'undefined') {
             showAlert(
               'Apps Script is still on an old version (' + ((ping && ping.version) || '?') +
@@ -430,6 +444,7 @@
         user = session.user;
         if (!token || !user) {
           showAuth();
+          await checkBackendReady();
           return;
         }
         await enterAdmin();

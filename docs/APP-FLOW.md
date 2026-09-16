@@ -13,7 +13,7 @@ This is the **entire application flow** document. Anyone joining the project can
 | Who | What they do |
 |-----|----------------|
 | **Students** | Register / sign in, take today’s quiz (English or Malayalam), submit once, see right/wrong, view scoreboard, quiz history, and profile/badges |
-| **Admins** | Edit questions in Google Sheet, sync to Firestore, manage Firebase/settings, use the **BBA Quiz** sheet menu |
+| **Admins** | Edit questions in Google Sheet, sync to Firestore, manage Firebase/settings, pause the live quiz with **maintenance mode**, use the **BBA Quiz** sheet menu |
 
 **Live site (typical):** `https://www.quiz.bbadublin.com/`  
 **Timezone:** Europe/Dublin (quiz day resets at local midnight)
@@ -77,6 +77,7 @@ flowchart LR
 | **Repair stats** | Recalc `totalScore`, `totalQuizzes`, `perfectScores`, `streak` from submissions | *Recalculate user stats from submissions* |
 | **Reset season** | Delete all submissions; zero scores/streaks; disable test date picker | *Delete all submissions & reset scores* |
 | **Go live** | Today-only quiz (no test date picker) | *Go live (disable test date picker)* or Settings `test_date_picker` \| `false` |
+| **Maintenance** | Pause taking quizzes + scheduled quiz emails; show a site banner | *Enable / Disable maintenance mode* or Settings `maintenance_mode` \| `true`/`false` |
 
 There is **no** automatic Sheet → Firestore sync for questions. After editing questions in the Sheet, an admin must run the manual sync.
 
@@ -164,6 +165,22 @@ Multi-chapter quizzes with an open/close window. **Not linked from the main site
 **API:** `customCatalog`, `customList`, `customCreate`, `customShuffle`, `customPublish`, `customGet`, `customSubmit`, `customResults`  
 **Code:** `gas/CustomQuiz.gs`, `web-frontend/admin-custom.html`, `web-frontend/custom.html`
 
+### 5.6 Maintenance mode (pause quiz + emails)
+
+Turn this on while you are editing questions, fixing data, or holding a season. Students still see the site, with a yellow banner.
+
+| Piece | Detail |
+|-------|--------|
+| Flag | Settings `maintenance_mode` \| `true` / `false` (default off). Menu: **Enable / Disable maintenance mode** |
+| Banner text | Settings `maintenance_message` (optional). Default: quizzes and daily emails are on hold |
+| Client | `ping` returns `maintenanceMode` + `maintenanceMessage`; web UI shows a full-width banner |
+| Daily quiz | `quiz` returns `available: false` with the message; `submit` is rejected |
+| Custom quiz | Taking/submitting is rejected (people who already submitted can still view their result) |
+| Scheduled emails | Welcome, daily/weekly/monthly scoreboard, and custom-results hourly job **skip** (not marked sent). After you disable maintenance they catch up |
+| Still works | Login, register, OTP / forgot-password email, scoreboard, history, profile. Sheet menu **Test … email** still sends so you can verify MailApp |
+
+Redeploy Apps Script after adding this code, then flip the Settings row (or the menu). Students should refresh the site.
+
 ---
 
 ## 6. Quiz load → score → review (detail)
@@ -214,6 +231,8 @@ From the Google Sheet menu **BBA Quiz**:
 | Recalculate user stats from submissions | Fix totals/streak from locked submits |
 | Delete all submissions & reset scores | Wipe submissions; zero scores; disable test picker |
 | Go live (disable test date picker) | Today-only quiz (no test date picker) |
+| Enable maintenance mode (pause quiz & emails) | Banner on; quizzes paused; scheduled quiz emails skip |
+| Disable maintenance mode (resume quiz & emails) | Banner off; quizzes and emails live again |
 | Backup Firestore → Sheet now | Immediate standby refresh |
 | Install 15-min Firestore → Sheet backup | Scheduled standby |
 | Remove auto sync / backup triggers | Clear triggers |
@@ -227,6 +246,8 @@ From the Google Sheet menu **BBA Quiz**:
 | Show Google Sites embed URL | Embed + health check URLs |
 
 **Test date picker (testing only):** Settings row `test_date_picker` | `true` (set `false` for live).
+
+**Maintenance pause:** Settings row `maintenance_mode` | `true` (banner + pause quizzes and scheduled emails). Optional `maintenance_message` for the banner text. Set `false` or use **Disable maintenance mode** to resume.
 
 ---
 
@@ -252,7 +273,7 @@ Hosted UI uses `window.BBA_API_URL` (usually the `/exec` URL or `/api` proxy).
 | `customCreate` / `customShuffle` / `customPublish` | token (admin) | Draft / reshuffle / publish |
 | `customGet` / `customSubmit` / `customResults` | token | Take / submit / results |
 | `profile` | token | Stats + badges |
-| `ping` | — | Version + public config |
+| `ping` | — | Version + public config (`testDatePicker`, `customQuizzesEnabled`, `maintenanceMode`, `maintenanceMessage`) |
 
 Serving the page (no `action`, or `action=page`) returns the HTML UI from Apps Script.
 
@@ -283,6 +304,8 @@ Keep `mobile/lib/config/app_config.dart` `appVersion` in sync with `APP_VERSION`
 | `firestore_auth_mode` | `user` |
 | `quiz_data_source` | `firestore` |
 | `test_date_picker` | `true` / `false` |
+| `maintenance_mode` | `true` pauses quizzes + scheduled quiz emails; `false` resumes |
+| `maintenance_message` | Optional banner text while maintenance is on |
 | `custom_quizzes_enabled` | `false` until ready (main-site listing gate) |
 | `custom_quiz_admin_emails` | `admin@bbadublin.com,other@…` |
 | `email_broadcast_mode` | `test` (one recipient) or `all` |
@@ -350,4 +373,4 @@ More: [SETUP.md](./SETUP.md), [FLUTTER.md](./FLUTTER.md), [SHEET-TEMPLATE.md](./
 
 ---
 
-*Last structural update: `2026-09-04.1` — Custom quizzes (admin + shareable take page) behind Settings flags; separate from daily scores.*
+*Last structural update: `2026-09-16.1` — Maintenance mode (banner + pause quizzes and scheduled emails) via Settings / BBA Quiz menu.*

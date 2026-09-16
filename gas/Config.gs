@@ -42,7 +42,7 @@ var CONFIG = {
   SCHEDULE_START_DATE: '2026-07-08',
 
   // Bump on each release — keep in sync with mobile/lib/config/app_config.dart appVersion
-  APP_VERSION: '2026-09-04.2',
+  APP_VERSION: '2026-09-16.1',
 
   // Quiz question languages (sheet per language, same quiz_id across sheets)
   DEFAULT_LANGUAGE: 'en',
@@ -80,6 +80,12 @@ var CONFIG = {
   // Override via Settings → custom_quizzes_enabled | true/false
   // Admins: Settings → custom_quiz_admin_emails | a@x.com,b@y.com
   CUSTOM_QUIZZES_ENABLED: false,
+
+  // Pause daily/custom quizzes and scheduled quiz emails. Login, scoreboard, OTP still work.
+  // Override via Settings → maintenance_mode | true/false
+  // Optional banner text: Settings → maintenance_message | Your message
+  MAINTENANCE_MODE: false,
+  MAINTENANCE_MESSAGE: 'We’re upgrading the quiz for a short while. Today’s quiz and daily emails are paused — thank you for your patience. We’ll be back soon!',
 
   // Badge definitions (earned automatically based on stats)
   BADGE_RULES: [
@@ -248,6 +254,39 @@ function isTestDatePickerEnabled_() {
   return CONFIG.TEST_DATE_PICKER === true;
 }
 
+/** When true, quiz taking/submitting and scheduled quiz emails are paused. */
+function isMaintenanceMode_() {
+  var fromSettings = String(getSetting_('maintenance_mode') || '').toLowerCase();
+  if (fromSettings === 'true' || fromSettings === '1' || fromSettings === 'yes') {
+    return true;
+  }
+  if (fromSettings === 'false' || fromSettings === '0' || fromSettings === 'no') {
+    return false;
+  }
+  return CONFIG.MAINTENANCE_MODE === true;
+}
+
+function getMaintenanceMessage_() {
+  var fromSettings = String(getSetting_('maintenance_message') || '').trim();
+  if (fromSettings) return fromSettings;
+  return CONFIG.MAINTENANCE_MESSAGE ||
+    'We’re upgrading the quiz for a short while. Today’s quiz and daily emails are paused — thank you for your patience. We’ll be back soon!';
+}
+
+function requireQuizzesOpen_() {
+  if (isMaintenanceMode_()) {
+    throw new Error(getMaintenanceMessage_());
+  }
+}
+
+function requireQuizEmailsOpen_() {
+  if (isMaintenanceMode_()) {
+    throw new Error(
+      'Quiz emails are paused while maintenance mode is on. Disable maintenance mode to send mail.'
+    );
+  }
+}
+
 function resolveQuizDate_(requestedDate) {
   var today = todayDate_();
   if (!isTestDatePickerEnabled_()) {
@@ -272,7 +311,9 @@ function getAppPublicConfig_() {
   return {
     version: CONFIG.APP_VERSION,
     testDatePicker: isTestDatePickerEnabled_(),
-    customQuizzesEnabled: isCustomQuizzesEnabled_()
+    customQuizzesEnabled: isCustomQuizzesEnabled_(),
+    maintenanceMode: isMaintenanceMode_(),
+    maintenanceMessage: getMaintenanceMessage_()
   };
 }
 

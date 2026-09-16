@@ -9,6 +9,7 @@
  *   daily_scoreboard_hour  23
  *   weekly_scoreboard_hour 23  (Saturday)
  *   monthly_scoreboard_hour 23 (last day of month; daily trigger checks date)
+ *   maintenance_mode       true pauses scheduled quiz emails (OTP still sends)
  */
 
 var QUIZ_EMAIL_HANDLERS = [
@@ -505,6 +506,14 @@ function sendCustomQuizResultsEmails_(customQuizId, options) {
 
 /** Find closed custom quizzes and email participants (once each). */
 function sendDueCustomQuizResultsEmails_() {
+  if (isMaintenanceMode_()) {
+    return {
+      due: 0,
+      sent: 0,
+      summaries: ['Skipped — maintenance mode is on']
+    };
+  }
+
   var due = listCustomQuizzesDueForResultsEmail_();
   var summaries = [];
   var totalSent = 0;
@@ -530,7 +539,14 @@ function sendDueCustomQuizResultsEmails_() {
 
 // --- Scheduled handlers (time-based triggers) ---
 
+function skipScheduledEmailIfMaintenance_(label) {
+  if (!isMaintenanceMode_()) return false;
+  Logger.log(label + ' skipped — maintenance mode is on');
+  return true;
+}
+
 function sendDailyWelcomeEmailScheduled_() {
+  if (skipScheduledEmailIfMaintenance_('Daily welcome email')) return;
   try {
     var result = sendDailyWelcomeEmails_();
     Logger.log('Daily welcome email: sent ' + result.sent + '/' + result.total);
@@ -540,6 +556,7 @@ function sendDailyWelcomeEmailScheduled_() {
 }
 
 function sendDailyScoreboardEmailScheduled_() {
+  if (skipScheduledEmailIfMaintenance_('Daily scoreboard email')) return;
   try {
     var result = sendDailyScoreboardEmails_();
     Logger.log('Daily scoreboard email: sent ' + result.sent + '/' + result.total);
@@ -549,6 +566,7 @@ function sendDailyScoreboardEmailScheduled_() {
 }
 
 function sendWeeklyScoreboardEmailScheduled_() {
+  if (skipScheduledEmailIfMaintenance_('Weekly scoreboard email')) return;
   try {
     var result = sendWeeklyScoreboardEmails_();
     Logger.log('Weekly scoreboard email: sent ' + result.sent + '/' + result.total);
@@ -558,6 +576,7 @@ function sendWeeklyScoreboardEmailScheduled_() {
 }
 
 function sendMonthlyScoreboardEmailScheduled_() {
+  if (skipScheduledEmailIfMaintenance_('Monthly scoreboard email')) return;
   if (!isLastDayOfMonthInTimezone_(CONFIG.TIMEZONE)) {
     Logger.log('Monthly scoreboard skipped — not last day of month in ' + CONFIG.TIMEZONE);
     return;
@@ -571,6 +590,7 @@ function sendMonthlyScoreboardEmailScheduled_() {
 }
 
 function sendCustomQuizResultsEmailScheduled_() {
+  if (skipScheduledEmailIfMaintenance_('Custom quiz results email')) return;
   try {
     var result = sendDueCustomQuizResultsEmails_();
     Logger.log(

@@ -1,4 +1,4 @@
-const APP_VERSION = '2026-09-02.1';
+const APP_VERSION = '2026-09-16.1';
     const VERSION_KEY = 'bba_quiz_app_version';
 
     (function enforceAppVersion() {
@@ -118,18 +118,35 @@ const APP_VERSION = '2026-09-02.1';
       return params;
     }
 
+    function syncMaintenanceBanner(enabled, message) {
+      const banner = document.getElementById('maintenance-banner');
+      if (!banner) return;
+      if (enabled === true) {
+        banner.textContent = message || 'We’re upgrading the quiz for a short while. Today’s quiz and daily emails are paused — thank you for your patience. We’ll be back soon!';
+        banner.classList.remove('hidden');
+      } else {
+        banner.textContent = '';
+        banner.classList.add('hidden');
+      }
+    }
+
     async function loadAppConfig() {
       try {
         const res = await API.call('ping', {});
         syncTestDatePickerUi(res.testDatePicker === true);
+        syncMaintenanceBanner(res.maintenanceMode === true, res.maintenanceMessage);
       } catch (err) {
         syncTestDatePickerUi(false);
+        syncMaintenanceBanner(false);
       }
     }
 
     function applyQuizConfigFromResponse(payload) {
       if (payload && payload.testDatePicker === true) {
         syncTestDatePickerUi(true);
+      }
+      if (payload && payload.maintenanceMode === true) {
+        syncMaintenanceBanner(true, payload.maintenanceMessage || payload.message);
       }
       if (payload && payload.date && testDatePickerEnabled) {
         const input = document.getElementById('test-quiz-date');

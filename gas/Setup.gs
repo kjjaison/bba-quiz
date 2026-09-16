@@ -81,7 +81,8 @@ function setupSheets() {
     'DailySchedule refreshed from Questions (' + scheduleCount + ' days, starting ' +
     CONFIG.SCHEDULE_START_DATE + ').\n\n' +
     'Testing: add Settings row test_date_picker | true to enable date picker.\n' +
-    'Go live: set test_date_picker | false (or remove the row).'
+    'Go live: set test_date_picker | false (or remove the row).\n' +
+    'Pause site: BBA Quiz → Enable maintenance mode (or Settings → maintenance_mode | true).'
   );
 }
 
@@ -275,6 +276,41 @@ function goLiveDisableTestDatePicker() {
   }
 }
 
+/** Pause daily/custom quizzes and scheduled quiz emails; show the site banner. */
+function enableMaintenanceMode() {
+  try {
+    setSetting_('maintenance_mode', 'true');
+    if (!String(getSetting_('maintenance_message') || '').trim()) {
+      setSetting_('maintenance_message', getMaintenanceMessage_());
+    }
+    showMessage_(
+      'Maintenance mode is ON.\n\n' +
+      'Banner: ' + getMaintenanceMessage_() + '\n\n' +
+      'Paused: taking/submitting quizzes, and scheduled quiz emails.\n' +
+      'Still working: login, scoreboard, history, profile, OTP / password emails.\n\n' +
+      'Ask students to refresh the site. To resume: BBA Quiz → Disable maintenance mode.\n' +
+      'Optional: Settings → maintenance_message | your custom banner text'
+    );
+  } catch (err) {
+    showMessage_('Could not enable maintenance mode:\n\n' + (err.message || err));
+  }
+}
+
+/** Resume quizzes and scheduled emails; hide the banner. */
+function disableMaintenanceMode() {
+  try {
+    setSetting_('maintenance_mode', 'false');
+    showMessage_(
+      'Maintenance mode is OFF.\n\n' +
+      'Quizzes and scheduled emails are live again.\n' +
+      'Refresh the site so the banner disappears.\n\n' +
+      'Closed custom quizzes that were waiting will email on the next hourly run.'
+    );
+  } catch (err) {
+    showMessage_('Could not disable maintenance mode:\n\n' + (err.message || err));
+  }
+}
+
 function onOpen() {
   try {
     SpreadsheetApp.getUi()
@@ -290,6 +326,8 @@ function onOpen() {
       .addItem('Recalculate user stats from submissions', 'recalculateUserStatsFromSubmissions')
       .addItem('Delete all submissions & reset scores', 'resetAllSubmissionsAndScores')
       .addItem('Go live (disable test date picker)', 'goLiveDisableTestDatePicker')
+      .addItem('Enable maintenance mode (pause quiz & emails)', 'enableMaintenanceMode')
+      .addItem('Disable maintenance mode (resume quiz & emails)', 'disableMaintenanceMode')
       .addItem('Backup Firestore → Sheet now', 'backupFirestoreToSheetWithMessage')
       .addItem('Install 15-min Firestore → Sheet backup', 'installFirestoreBackupTrigger')
       .addItem('Remove auto sync / backup triggers', 'uninstallFirestoreBackupTrigger')

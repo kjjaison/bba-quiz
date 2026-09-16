@@ -59,7 +59,7 @@ bba-quiz/
 | `DailySchedule` | Date → book/chapter → quiz ID |
 | `Questions` | Quiz questions (min. 5 per day) |
 | `Submissions` | Locked answers (one per user per day) |
-| `Settings` | Optional configuration |
+| `Settings` | Optional configuration (`maintenance_mode`, emails, custom quizzes, …) |
 
 ## Adding daily quizzes
 
