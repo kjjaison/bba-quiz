@@ -1,4 +1,4 @@
-const APP_VERSION = '2026-09-16.1';
+const APP_VERSION = '2026-09-27.1';
     const VERSION_KEY = 'bba_quiz_app_version';
 
     (function enforceAppVersion() {

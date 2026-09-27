@@ -9,7 +9,9 @@
  *   daily_scoreboard_hour  23
  *   weekly_scoreboard_hour 23  (Saturday)
  *   monthly_scoreboard_hour 23 (last day of month; daily trigger checks date)
- *   maintenance_mode       true pauses scheduled quiz emails (OTP still sends)
+ *   maintenance_mode       true pauses BOTH daily + custom (legacy)
+ *   pause_daily_quiz       true pauses daily welcome/scoreboard emails
+ *   pause_custom_quiz      true pauses custom-results emails
  */
 
 var QUIZ_EMAIL_HANDLERS = [
@@ -506,11 +508,11 @@ function sendCustomQuizResultsEmails_(customQuizId, options) {
 
 /** Find closed custom quizzes and email participants (once each). */
 function sendDueCustomQuizResultsEmails_() {
-  if (isMaintenanceMode_()) {
+  if (isCustomQuizPaused_()) {
     return {
       due: 0,
       sent: 0,
-      summaries: ['Skipped — maintenance mode is on']
+      summaries: ['Skipped — custom quizzes are paused']
     };
   }
 
@@ -540,8 +542,8 @@ function sendDueCustomQuizResultsEmails_() {
 // --- Scheduled handlers (time-based triggers) ---
 
 function skipScheduledEmailIfMaintenance_(label) {
-  if (!isMaintenanceMode_()) return false;
-  Logger.log(label + ' skipped — maintenance mode is on');
+  if (!isDailyQuizPaused_()) return false;
+  Logger.log(label + ' skipped — daily quiz is paused');
   return true;
 }
 
@@ -590,7 +592,10 @@ function sendMonthlyScoreboardEmailScheduled_() {
 }
 
 function sendCustomQuizResultsEmailScheduled_() {
-  if (skipScheduledEmailIfMaintenance_('Custom quiz results email')) return;
+  if (isCustomQuizPaused_()) {
+    Logger.log('Custom quiz results email skipped — custom quizzes are paused');
+    return;
+  }
   try {
     var result = sendDueCustomQuizResultsEmails_();
     Logger.log(

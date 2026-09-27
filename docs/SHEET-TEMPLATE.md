@@ -125,14 +125,16 @@ Optional key-value configuration. The app already uses this tab for live flags (
 | key | value example | Effect |
 |-----|----------------|--------|
 | `test_date_picker` | `true` / `false` | Show a date picker so testers can load other days |
-| `maintenance_mode` | `true` / `false` | Pause taking quizzes and skip scheduled quiz emails; show a site banner |
-| `maintenance_message` | `We’ll be back Sunday morning — thank you for waiting!` | Optional banner text (default copy is used if blank) |
+| `pause_daily_quiz` | `true` / `false` | Pause today’s quiz + daily/weekly/monthly emails; custom stays open if `pause_custom_quiz` is false |
+| `pause_custom_quiz` | `true` / `false` | Pause custom quiz take/submit + custom results emails |
+| `maintenance_mode` | `true` / `false` | Legacy: pauses **both** daily and custom (prefer the pause_* keys) |
+| `maintenance_message` | `Custom quizzes are open — daily quiz is paused` | Optional banner text (menu sets a default) |
 | `custom_quizzes_enabled` | `true` / `false` | Gate custom quizzes |
 | `custom_quiz_admin_emails` | `a@x.com,b@y.com` | Who can open `admin-custom.html` |
 | `email_broadcast_mode` | `test` / `all` | One test mailbox vs all users |
 | `email_test_recipient` | `kjjaison@gmail.com` | Test mailbox |
 
-**Pause the live quiz:** Sheet menu **BBA Quiz → Enable maintenance mode**, or add `maintenance_mode` \| `true`. Students should refresh. To resume: **Disable maintenance mode** (or set `false`). Login, scoreboard, and OTP emails keep working.
+**Pause the live quiz:** Sheet menu **BBA Quiz → Pause daily quiz only** (custom stays open) or **Pause all quizzes**. Resume with **Resume all quizzes**. Login, scoreboard, and OTP emails keep working.
 
 ---
 

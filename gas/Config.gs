@@ -42,7 +42,7 @@ var CONFIG = {
   SCHEDULE_START_DATE: '2026-07-08',
 
   // Bump on each release — keep in sync with mobile/lib/config/app_config.dart appVersion
-  APP_VERSION: '2026-09-16.1',
+  APP_VERSION: '2026-09-27.1',
 
   // Quiz question languages (sheet per language, same quiz_id across sheets)
   DEFAULT_LANGUAGE: 'en',
@@ -81,11 +81,17 @@ var CONFIG = {
   // Admins: Settings → custom_quiz_admin_emails | a@x.com,b@y.com
   CUSTOM_QUIZZES_ENABLED: false,
 
-  // Pause daily/custom quizzes and scheduled quiz emails. Login, scoreboard, OTP still work.
-  // Override via Settings → maintenance_mode | true/false
+  // Pause quizzes independently. Login, scoreboard, OTP still work.
+  // Settings → pause_daily_quiz | true/false   (pause daily take + daily/weekly/monthly emails)
+  // Settings → pause_custom_quiz | true/false  (pause custom take + custom results emails)
+  // Legacy: Settings → maintenance_mode | true  pauses BOTH (same as both pause_* flags)
   // Optional banner text: Settings → maintenance_message | Your message
+  PAUSE_DAILY_QUIZ: false,
+  PAUSE_CUSTOM_QUIZ: false,
   MAINTENANCE_MODE: false,
   MAINTENANCE_MESSAGE: 'We’re upgrading the quiz for a short while. Today’s quiz and daily emails are paused — thank you for your patience. We’ll be back soon!',
+  PAUSE_DAILY_ONLY_MESSAGE: 'Today’s daily quiz and daily emails are paused. Custom quizzes are still open — thank you for your patience!',
+  PAUSE_ALL_QUIZZES_MESSAGE: 'Quizzes are temporarily paused (daily and custom). Scheduled quiz emails are on hold — thank you for your patience. We’ll be back soon!',
 
   // Badge definitions (earned automatically based on stats)
   BADGE_RULES: [
@@ -254,37 +260,98 @@ function isTestDatePickerEnabled_() {
   return CONFIG.TEST_DATE_PICKER === true;
 }
 
-/** When true, quiz taking/submitting and scheduled quiz emails are paused. */
-function isMaintenanceMode_() {
-  var fromSettings = String(getSetting_('maintenance_mode') || '').toLowerCase();
+function settingFlagOrDefault_(key, configDefault) {
+  var fromSettings = String(getSetting_(key) || '').toLowerCase();
   if (fromSettings === 'true' || fromSettings === '1' || fromSettings === 'yes') {
     return true;
   }
   if (fromSettings === 'false' || fromSettings === '0' || fromSettings === 'no') {
     return false;
   }
-  return CONFIG.MAINTENANCE_MODE === true;
+  return configDefault === true;
+}
+
+/**
+ * Legacy master switch: Settings → maintenance_mode | true pauses both daily + custom.
+ * Prefer pause_daily_quiz / pause_custom_quiz for finer control.
+ */
+function isLegacyMaintenanceMode_() {
+  return settingFlagOrDefault_('maintenance_mode', CONFIG.MAINTENANCE_MODE);
+}
+
+function isDailyQuizPaused_() {
+  if (isLegacyMaintenanceMode_()) return true;
+  return settingFlagOrDefault_('pause_daily_quiz', CONFIG.PAUSE_DAILY_QUIZ);
+}
+
+function isCustomQuizPaused_() {
+  if (isLegacyMaintenanceMode_()) return true;
+  return settingFlagOrDefault_('pause_custom_quiz', CONFIG.PAUSE_CUSTOM_QUIZ);
+}
+
+/** True when any quiz pause is active (shows the site banner). */
+function isMaintenanceMode_() {
+  return isDailyQuizPaused_() || isCustomQuizPaused_();
 }
 
 function getMaintenanceMessage_() {
   var fromSettings = String(getSetting_('maintenance_message') || '').trim();
   if (fromSettings) return fromSettings;
+
+  var dailyPaused = isDailyQuizPaused_();
+  var customPaused = isCustomQuizPaused_();
+  if (dailyPaused && customPaused) {
+    return CONFIG.PAUSE_ALL_QUIZZES_MESSAGE || CONFIG.MAINTENANCE_MESSAGE ||
+      'Quizzes are temporarily paused (daily and custom). Scheduled quiz emails are on hold — thank you for your patience. We’ll be back soon!';
+  }
+  if (dailyPaused) {
+    return CONFIG.PAUSE_DAILY_ONLY_MESSAGE ||
+      'Today’s daily quiz and daily emails are paused. Custom quizzes are still open — thank you for your patience!';
+  }
+  if (customPaused) {
+    return 'Custom quizzes are temporarily paused. The daily quiz is still available — thank you for your patience!';
+  }
   return CONFIG.MAINTENANCE_MESSAGE ||
     'We’re upgrading the quiz for a short while. Today’s quiz and daily emails are paused — thank you for your patience. We’ll be back soon!';
 }
 
-function requireQuizzesOpen_() {
-  if (isMaintenanceMode_()) {
+function requireDailyQuizOpen_() {
+  if (isDailyQuizPaused_()) {
     throw new Error(getMaintenanceMessage_());
   }
 }
 
-function requireQuizEmailsOpen_() {
-  if (isMaintenanceMode_()) {
+function requireCustomQuizOpen_() {
+  if (isCustomQuizPaused_()) {
+    throw new Error(getMaintenanceMessage_());
+  }
+}
+
+/** @deprecated Use requireDailyQuizOpen_ / requireCustomQuizOpen_ */
+function requireQuizzesOpen_() {
+  requireDailyQuizOpen_();
+}
+
+function requireDailyQuizEmailsOpen_() {
+  if (isDailyQuizPaused_()) {
     throw new Error(
-      'Quiz emails are paused while maintenance mode is on. Disable maintenance mode to send mail.'
+      'Daily quiz emails are paused. Resume daily quiz (BBA Quiz menu) to send them.'
     );
   }
+}
+
+function requireCustomQuizEmailsOpen_() {
+  if (isCustomQuizPaused_()) {
+    throw new Error(
+      'Custom quiz emails are paused. Resume custom quizzes (BBA Quiz menu) to send them.'
+    );
+  }
+}
+
+/** @deprecated Use requireDailyQuizEmailsOpen_ / requireCustomQuizEmailsOpen_ */
+function requireQuizEmailsOpen_() {
+  requireDailyQuizEmailsOpen_();
+  requireCustomQuizEmailsOpen_();
 }
 
 function resolveQuizDate_(requestedDate) {
@@ -308,11 +375,15 @@ function sheetDateFromYmd_(ymd) {
 }
 
 function getAppPublicConfig_() {
+  var pauseDaily = isDailyQuizPaused_();
+  var pauseCustom = isCustomQuizPaused_();
   return {
     version: CONFIG.APP_VERSION,
     testDatePicker: isTestDatePickerEnabled_(),
-    customQuizzesEnabled: isCustomQuizzesEnabled_(),
-    maintenanceMode: isMaintenanceMode_(),
+    customQuizzesEnabled: isCustomQuizzesEnabled_() && !pauseCustom,
+    pauseDailyQuiz: pauseDaily,
+    pauseCustomQuiz: pauseCustom,
+    maintenanceMode: pauseDaily || pauseCustom,
     maintenanceMessage: getMaintenanceMessage_()
   };
 }

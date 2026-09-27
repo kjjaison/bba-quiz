@@ -5,7 +5,8 @@
  * Settings:
  *   custom_quizzes_enabled     true|false  (show on main site when true; default false)
  *   custom_quiz_admin_emails   comma-separated emails allowed to manage quizzes
- * Taking/submitting is paused when Settings → maintenance_mode is true.
+ * Taking/submitting is paused when Settings → pause_custom_quiz is true
+ * (or legacy maintenance_mode is true).
  */
 
 function isCustomQuizzesEnabled_() {
@@ -583,7 +584,7 @@ function getCustomQuizForUser_(user, customQuizId, language) {
 
   var existingSubmission = getCustomSubmission_(user.email, doc.id);
   var alreadySubmitted = !!(existingSubmission && existingSubmission.locked);
-  if (isMaintenanceMode_() && !alreadySubmitted && !isCustomQuizAdmin_(user)) {
+  if (isCustomQuizPaused_() && !alreadySubmitted && !isCustomQuizAdmin_(user)) {
     throw new Error(getMaintenanceMessage_());
   }
 
@@ -597,7 +598,7 @@ function getCustomQuizForUser_(user, customQuizId, language) {
 
   var submission = existingSubmission || getCustomSubmission_(user.email, doc.id);
   var completed = !!(submission && submission.locked);
-  var canTake = windowStatus === 'open' && !completed && !isMaintenanceMode_();
+  var canTake = windowStatus === 'open' && !completed && !isCustomQuizPaused_();
   var includeAnswers = completed || (admin && windowStatus !== 'open');
 
   // Non-admins cannot peek answers before submitting
@@ -647,7 +648,7 @@ function getCustomQuizForUser_(user, customQuizId, language) {
 }
 
 function submitCustomQuiz_(user, customQuizId, answers, language) {
-  requireQuizzesOpen_();
+  requireCustomQuizOpen_();
   var doc = getCustomQuizDoc_(customQuizId);
   if (!doc) throw new Error('Custom quiz not found.');
   if (doc.status !== 'published' && doc.status !== 'open') {

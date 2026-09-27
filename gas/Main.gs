@@ -126,7 +126,7 @@ function handleApi_(e) {
         });
 
       case 'submit':
-        requireQuizzesOpen_();
+        requireDailyQuizOpen_();
         var submitUser = validateSession_(token);
         return successResponse_({
           result: submitQuiz_(submitUser, params.answers || {}, params.language, params.quizDate)
@@ -208,7 +208,7 @@ function handleApi_(e) {
         });
 
       case 'customSubmit':
-        requireQuizzesOpen_();
+        requireCustomQuizOpen_();
         var customSubmitUser = validateSession_(token);
         return successResponse_({
           result: submitCustomQuiz_(
@@ -224,7 +224,7 @@ function handleApi_(e) {
         return successResponse_(getCustomQuizResults_(resultsUser, params.customQuizId || params.id || params.q));
 
       case 'customSendResults':
-        requireQuizEmailsOpen_();
+        requireCustomQuizEmailsOpen_();
         var sendResultsUser = validateSession_(token);
         requireCustomQuizAdmin_(sendResultsUser);
         return successResponse_(
@@ -239,6 +239,8 @@ function handleApi_(e) {
           version: appConfig.version,
           testDatePicker: appConfig.testDatePicker,
           customQuizzesEnabled: appConfig.customQuizzesEnabled,
+          pauseDailyQuiz: appConfig.pauseDailyQuiz,
+          pauseCustomQuiz: appConfig.pauseCustomQuiz,
           maintenanceMode: appConfig.maintenanceMode,
           maintenanceMessage: appConfig.maintenanceMessage,
           time: new Date().toISOString()

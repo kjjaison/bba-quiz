@@ -82,7 +82,7 @@ function setupSheets() {
     CONFIG.SCHEDULE_START_DATE + ').\n\n' +
     'Testing: add Settings row test_date_picker | true to enable date picker.\n' +
     'Go live: set test_date_picker | false (or remove the row).\n' +
-    'Pause site: BBA Quiz → Enable maintenance mode (or Settings → maintenance_mode | true).'
+    'Pause site: BBA Quiz → Pause daily quiz only, or Pause all quizzes.'
   );
 }
 
@@ -276,39 +276,71 @@ function goLiveDisableTestDatePicker() {
   }
 }
 
-/** Pause daily/custom quizzes and scheduled quiz emails; show the site banner. */
-function enableMaintenanceMode() {
+/** Pause daily quiz only — custom quizzes stay open. */
+function pauseDailyQuizOnly() {
   try {
-    setSetting_('maintenance_mode', 'true');
-    if (!String(getSetting_('maintenance_message') || '').trim()) {
-      setSetting_('maintenance_message', getMaintenanceMessage_());
-    }
+    setSetting_('pause_daily_quiz', 'true');
+    setSetting_('pause_custom_quiz', 'false');
+    setSetting_('maintenance_mode', 'false');
+    setSetting_('maintenance_message', CONFIG.PAUSE_DAILY_ONLY_MESSAGE || getMaintenanceMessage_());
     showMessage_(
-      'Maintenance mode is ON.\n\n' +
+      'Daily quiz is PAUSED. Custom quizzes are OPEN.\n\n' +
       'Banner: ' + getMaintenanceMessage_() + '\n\n' +
-      'Paused: taking/submitting quizzes, and scheduled quiz emails.\n' +
-      'Still working: login, scoreboard, history, profile, OTP / password emails.\n\n' +
-      'Ask students to refresh the site. To resume: BBA Quiz → Disable maintenance mode.\n' +
-      'Optional: Settings → maintenance_message | your custom banner text'
+      'Paused: today’s quiz + daily/weekly/monthly emails.\n' +
+      'Open: custom quiz take/submit + custom results emails.\n' +
+      'Still working: login, scoreboard, history, profile, OTP.\n\n' +
+      'Ask students to refresh. To pause everything: BBA Quiz → Pause all quizzes.\n' +
+      'To resume: BBA Quiz → Resume all quizzes.'
     );
   } catch (err) {
-    showMessage_('Could not enable maintenance mode:\n\n' + (err.message || err));
+    showMessage_('Could not pause daily quiz:\n\n' + (err.message || err));
   }
 }
 
-/** Resume quizzes and scheduled emails; hide the banner. */
-function disableMaintenanceMode() {
+/** Pause both daily and custom quizzes (and their scheduled emails). */
+function pauseAllQuizzes() {
   try {
+    setSetting_('pause_daily_quiz', 'true');
+    setSetting_('pause_custom_quiz', 'true');
+    setSetting_('maintenance_mode', 'false');
+    setSetting_('maintenance_message', CONFIG.PAUSE_ALL_QUIZZES_MESSAGE || getMaintenanceMessage_());
+    showMessage_(
+      'All quizzes are PAUSED (daily + custom).\n\n' +
+      'Banner: ' + getMaintenanceMessage_() + '\n\n' +
+      'Paused: taking/submitting daily & custom quizzes, and scheduled quiz emails.\n' +
+      'Still working: login, scoreboard, history, profile, OTP / password emails.\n\n' +
+      'Ask students to refresh. To resume: BBA Quiz → Resume all quizzes.\n' +
+      'Optional: Settings → maintenance_message | your custom banner text'
+    );
+  } catch (err) {
+    showMessage_('Could not pause all quizzes:\n\n' + (err.message || err));
+  }
+}
+
+/** @deprecated Prefer pauseAllQuizzes — kept for older menu caches. */
+function enableMaintenanceMode() {
+  pauseAllQuizzes();
+}
+
+/** Resume daily and custom quizzes; hide the banner. */
+function resumeAllQuizzes() {
+  try {
+    setSetting_('pause_daily_quiz', 'false');
+    setSetting_('pause_custom_quiz', 'false');
     setSetting_('maintenance_mode', 'false');
     showMessage_(
-      'Maintenance mode is OFF.\n\n' +
-      'Quizzes and scheduled emails are live again.\n' +
+      'All quizzes are LIVE again (daily + custom).\n\n' +
       'Refresh the site so the banner disappears.\n\n' +
       'Closed custom quizzes that were waiting will email on the next hourly run.'
     );
   } catch (err) {
-    showMessage_('Could not disable maintenance mode:\n\n' + (err.message || err));
+    showMessage_('Could not resume quizzes:\n\n' + (err.message || err));
   }
+}
+
+/** @deprecated Prefer resumeAllQuizzes — kept for older menu caches. */
+function disableMaintenanceMode() {
+  resumeAllQuizzes();
 }
 
 function onOpen() {
@@ -326,8 +358,9 @@ function onOpen() {
       .addItem('Recalculate user stats from submissions', 'recalculateUserStatsFromSubmissions')
       .addItem('Delete all submissions & reset scores', 'resetAllSubmissionsAndScores')
       .addItem('Go live (disable test date picker)', 'goLiveDisableTestDatePicker')
-      .addItem('Enable maintenance mode (pause quiz & emails)', 'enableMaintenanceMode')
-      .addItem('Disable maintenance mode (resume quiz & emails)', 'disableMaintenanceMode')
+      .addItem('Pause daily quiz only (custom stays open)', 'pauseDailyQuizOnly')
+      .addItem('Pause all quizzes (daily + custom)', 'pauseAllQuizzes')
+      .addItem('Resume all quizzes', 'resumeAllQuizzes')
       .addItem('Backup Firestore → Sheet now', 'backupFirestoreToSheetWithMessage')
       .addItem('Install 15-min Firestore → Sheet backup', 'installFirestoreBackupTrigger')
       .addItem('Remove auto sync / backup triggers', 'uninstallFirestoreBackupTrigger')

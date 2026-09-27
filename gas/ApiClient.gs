@@ -34,6 +34,8 @@ function apiPing() {
     version: appConfig.version,
     testDatePicker: appConfig.testDatePicker,
     customQuizzesEnabled: appConfig.customQuizzesEnabled,
+    pauseDailyQuiz: appConfig.pauseDailyQuiz,
+    pauseCustomQuiz: appConfig.pauseCustomQuiz,
     maintenanceMode: appConfig.maintenanceMode,
     maintenanceMessage: appConfig.maintenanceMessage,
     time: new Date().toISOString()
@@ -46,7 +48,7 @@ function apiGetQuiz(token, language, quizDate) {
 }
 
 function apiSubmitQuiz(token, answers, language, quizDate) {
-  requireQuizzesOpen_();
+  requireDailyQuizOpen_();
   var user = validateSession_(token);
   return { success: true, result: submitQuiz_(user, answers, language, quizDate) };
 }
@@ -131,7 +133,7 @@ function apiCustomGet(token, customQuizId, language) {
 }
 
 function apiCustomSubmit(token, customQuizId, answers, language) {
-  requireQuizzesOpen_();
+  requireCustomQuizOpen_();
   var user = validateSession_(token);
   return {
     success: true,
@@ -147,7 +149,7 @@ function apiCustomResults(token, customQuizId) {
 }
 
 function apiCustomSendResults(token, customQuizId) {
-  requireQuizEmailsOpen_();
+  requireCustomQuizEmailsOpen_();
   var user = validateSession_(token);
   requireCustomQuizAdmin_(user);
   var data = sendCustomQuizResultsEmails_(customQuizId);

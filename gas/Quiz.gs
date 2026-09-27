@@ -289,12 +289,13 @@ function validateQuizReady_(quizId, book, chapter, language) {
 }
 
 function getTodayQuiz_(user, language, requestedDate) {
-  if (isMaintenanceMode_()) {
+  if (isDailyQuizPaused_()) {
     return {
       date: resolveQuizDate_(requestedDate),
       available: false,
       maintenance: true,
       maintenanceMode: true,
+      pauseDailyQuiz: true,
       maintenanceMessage: getMaintenanceMessage_(),
       testDatePicker: isTestDatePickerEnabled_(),
       message: getMaintenanceMessage_()
@@ -1049,7 +1050,7 @@ function attachAnswerMapToQuestions_(questions, answerMap) {
 }
 
 function submitQuiz_(user, answers, language, requestedDate) {
-  requireQuizzesOpen_();
+  requireDailyQuizOpen_();
   var lang = normalizeLanguage_(language);
   var today = todayDate_();
   var quizDate = resolveQuizDate_(requestedDate);
