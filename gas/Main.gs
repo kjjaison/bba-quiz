@@ -207,6 +207,17 @@ function handleApi_(e) {
           quiz: getCustomQuizForUser_(getUser, params.customQuizId || params.id || params.q, params.language)
         });
 
+      case 'customSave':
+        requireCustomQuizOpen_();
+        var saveUser = validateSession_(token);
+        return successResponse_({
+          result: saveCustomQuizProgress_(
+            saveUser,
+            params.customQuizId || params.id || params.q,
+            params.answers || {}
+          )
+        });
+
       case 'customSubmit':
         requireCustomQuizOpen_();
         var customSubmitUser = validateSession_(token);

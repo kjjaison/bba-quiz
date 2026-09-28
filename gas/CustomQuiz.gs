@@ -442,6 +442,7 @@ function getCustomSubmission_(email, customQuizId) {
     } catch (e) {
       answers = {};
     }
+    var locked = doc.locked !== false && doc.locked !== 'false' && doc.locked !== 0;
     return {
       email: email,
       customQuizId: customQuizId,
@@ -449,12 +450,101 @@ function getCustomSubmission_(email, customQuizId) {
       totalQuestions: Number(doc.totalQuestions) || 0,
       answers: answers,
       submittedAt: doc.submittedAt || '',
-      locked: doc.locked !== false
+      updatedAt: doc.updatedAt || doc.submittedAt || '',
+      locked: locked
     };
   } catch (err) {
     Logger.log('Custom submission read failed: ' + (err.message || err));
     return null;
   }
+}
+
+function normalizeCustomAnswerMap_(answers, questionRefs) {
+  if (typeof answers === 'string') {
+    try {
+      answers = JSON.parse(answers);
+    } catch (e) {
+      answers = {};
+    }
+  }
+  answers = answers || {};
+  var allowed = {};
+  var refs = questionRefs || [];
+  for (var i = 0; i < refs.length; i++) {
+    var ref = refs[i] || {};
+    var qid = String(ref.displayId || (i + 1));
+    if (qid) allowed[qid] = true;
+  }
+
+  var out = {};
+  for (var key in answers) {
+    if (!answers.hasOwnProperty(key)) continue;
+    var id = String(key);
+    if (Object.keys(allowed).length && !allowed[id]) continue;
+    var letter = normalizeCorrectAnswer_(answers[key]);
+    if (letter) out[id] = letter;
+  }
+  return out;
+}
+
+/**
+ * Auto-save / resume: store unlocked progress so users can finish over multiple days.
+ * Does not score or lock. Final submit still required.
+ */
+function saveCustomQuizProgress_(user, customQuizId, answers) {
+  requireCustomQuizOpen_();
+  var doc = getCustomQuizDoc_(customQuizId);
+  if (!doc) throw new Error('Custom quiz not found.');
+  if (doc.status !== 'published' && doc.status !== 'open') {
+    throw new Error('This custom quiz is not open for submissions.');
+  }
+
+  var windowStatus = getCustomQuizWindowStatus_(doc);
+  if (windowStatus === 'scheduled') {
+    throw new Error('This custom quiz has not opened yet.');
+  }
+  if (windowStatus === 'closed') {
+    throw new Error('This custom quiz is closed. Progress can no longer be saved.');
+  }
+
+  var existing = getCustomSubmission_(user.email, doc.id);
+  if (existing && existing.locked) {
+    throw new Error('You already submitted this quiz. Only one attempt is allowed.');
+  }
+
+  var answerMap = normalizeCustomAnswerMap_(answers, doc.questionRefs || []);
+  var answeredCount = 0;
+  for (var k in answerMap) {
+    if (answerMap.hasOwnProperty(k) && answerMap[k]) answeredCount++;
+  }
+
+  var email = String(user.email || '').toLowerCase().trim();
+  var now = new Date().toISOString();
+  var totalQuestions = (doc.questionRefs || []).length || Number(doc.questionCount) || 0;
+
+  firestoreCommitWrites_([buildFirestoreUpdateWrite_(
+    'customSubmissions',
+    customSubmissionDocId_(email, doc.id),
+    {
+      email: email,
+      customQuizId: doc.id,
+      answersJson: JSON.stringify(answerMap),
+      score: 0,
+      totalQuestions: totalQuestions,
+      submittedAt: '',
+      locked: false,
+      updatedAt: now
+    }
+  )]);
+
+  return {
+    saved: true,
+    draft: true,
+    answeredCount: answeredCount,
+    totalQuestions: totalQuestions,
+    answers: answerMap,
+    savedAt: now
+  };
 }
 
 function createCustomQuizDraft_(user, payload) {
@@ -638,6 +728,10 @@ function getCustomQuizForUser_(user, customQuizId, language) {
       }
       payload.correctAnswers = correctAnswers;
     }
+  } else if (submission && submission.answers) {
+    payload.answers = submission.answers;
+    payload.hasDraft = true;
+    payload.savedAt = submission.updatedAt || '';
   }
 
   if (admin) {
@@ -668,28 +762,18 @@ function submitCustomQuiz_(user, customQuizId, answers, language) {
     throw new Error('You already submitted this quiz. Only one attempt is allowed.');
   }
 
-  if (typeof answers === 'string') {
-    try {
-      answers = JSON.parse(answers);
-    } catch (e) {
-      answers = {};
-    }
-  }
-  answers = answers || {};
-
+  var answerMap = normalizeCustomAnswerMap_(answers, doc.questionRefs || []);
   var lang = normalizeLanguage_(language || 'en');
   var questions = loadCustomQuizQuestions_(doc.questionRefs || [], lang, true);
   var totalQuestions = questions.length;
   var score = 0;
   var answeredCount = 0;
-  var answerMap = {};
   var correctAnswers = {};
 
   for (var i = 0; i < questions.length; i++) {
     var q = questions[i];
     var qid = String(q.id);
-    var given = normalizeCorrectAnswer_(answers[qid] || answers[q.id] || '');
-    answerMap[qid] = given;
+    var given = answerMap[qid] || '';
     correctAnswers[qid] = normalizeCorrectAnswer_(q.correctAnswer || '');
     if (given) answeredCount++;
     if (given && correctAnswers[qid] && given === correctAnswers[qid]) {
@@ -699,6 +783,12 @@ function submitCustomQuiz_(user, customQuizId, answers, language) {
 
   if (answeredCount < totalQuestions) {
     throw new Error('Please answer all ' + totalQuestions + ' questions before submitting.');
+  }
+
+  // Ensure every question key is present on the locked submission
+  for (var j = 0; j < questions.length; j++) {
+    var id = String(questions[j].id);
+    if (!answerMap[id]) answerMap[id] = '';
   }
 
   var totalPoints = score * (CONFIG.POINTS_PER_CORRECT || 1);
@@ -840,7 +930,7 @@ function getCustomQuizResults_(user, customQuizId) {
 
   return {
     quiz: publicCustomQuizSummary_(doc),
-    mine: mine ? {
+    mine: (mine && mine.locked) ? {
       score: mine.score,
       totalQuestions: mine.totalQuestions,
       submittedAt: mine.submittedAt

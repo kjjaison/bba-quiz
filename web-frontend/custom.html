@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="bba-app-version" content="2026-09-27.1" />
+  <meta name="bba-app-version" content="2026-09-28.1" />
   <title>Custom Quiz — BBA Dublin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=2026-09-27.1" />
+  <link rel="stylesheet" href="./styles.css?v=2026-09-28.1" />
   <style>
     .quiz-meta {
       background: var(--bg);
@@ -57,6 +57,15 @@
       color: var(--text-muted);
       margin-bottom: 0.25rem;
     }
+    .save-status {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-top: 0.75rem;
+      min-height: 1.2em;
+    }
+    .save-status.saving { color: var(--primary-light); }
+    .save-status.saved { color: var(--success); }
+    .save-status.error { color: var(--error); }
   </style>
 </head>
 <body>
@@ -93,7 +102,7 @@
       <div class="card" style="display:flex;justify-content:space-between;gap:0.75rem;flex-wrap:wrap;align-items:center;">
         <div>
           <strong id="user-name"></strong>
-          <div style="font-size:0.85rem;color:var(--text-muted);">One attempt only · separate from daily scores</div>
+          <div style="font-size:0.85rem;color:var(--text-muted);">Answers auto-save · finish anytime before close · one final submit</div>
         </div>
         <div class="nav-row" style="margin:0;">
           <label style="display:flex;align-items:center;gap:0.35rem;font-size:0.85rem;">
@@ -116,8 +125,8 @@
     </div>
   </div>
 
-  <script src="./config.js?v=2026-09-27.1"></script>
-  <script src="./custom-api.js?v=2026-09-27.1"></script>
+  <script src="./config.js?v=2026-09-28.1"></script>
+  <script src="./custom-api.js?v=2026-09-28.1"></script>
   <script>
     (function () {
       const { API, loadSession, saveSession, clearSession, escapeHtml } = window.BbaCustom;
@@ -128,7 +137,13 @@
       let quiz = null;
       let selected = {};
       let currentQuestionIndex = 0;
+      let saveTimer = null;
+      let saveStatus = '';
+      let lastSavedAt = '';
+      let saveInFlight = false;
+      let pendingSave = false;
       const LANG_KEY = 'bba_quiz_language';
+      const SAVE_DEBOUNCE_MS = 700;
 
       function getLanguage() {
         const sel = document.getElementById('lang-select');
@@ -180,7 +195,86 @@
 
       function answeredCount() {
         const questions = (quiz && quiz.questions) || [];
-        return questions.filter((q) => !!selected[q.id]).length;
+        return questions.filter((q) => !!selected[q.id] || !!selected[String(q.id)]).length;
+      }
+
+      function buildAnswerPayload() {
+        const answers = {};
+        (quiz.questions || []).forEach((q) => {
+          const letter = selected[q.id] || selected[String(q.id)];
+          if (letter) answers[String(q.id)] = letter;
+        });
+        return answers;
+      }
+
+      function firstUnansweredIndex() {
+        const questions = (quiz && quiz.questions) || [];
+        for (let i = 0; i < questions.length; i++) {
+          const q = questions[i];
+          if (!(selected[q.id] || selected[String(q.id)])) return i;
+        }
+        return Math.max(0, questions.length - 1);
+      }
+
+      function formatSavedAt(iso) {
+        if (!iso) return '';
+        try {
+          const d = new Date(iso);
+          if (isNaN(d.getTime())) return '';
+          return d.toLocaleString();
+        } catch (e) {
+          return '';
+        }
+      }
+
+      function setSaveStatus(kind, text) {
+        saveStatus = kind || '';
+        const el = document.getElementById('save-status');
+        if (!el) return;
+        el.className = 'save-status' + (kind ? ' ' + kind : '');
+        el.textContent = text || '';
+      }
+
+      async function saveProgressNow() {
+        if (!token || !quiz || quiz.submitted || !quiz.canTake) return;
+        if (saveInFlight) {
+          pendingSave = true;
+          return;
+        }
+        const answers = buildAnswerPayload();
+        if (!Object.keys(answers).length) {
+          setSaveStatus('', 'Answers auto-save when you pick an option.');
+          return;
+        }
+        saveInFlight = true;
+        setSaveStatus('saving', 'Saving progress…');
+        try {
+          const res = await API.call('customSave', {
+            token,
+            customQuizId: quizId,
+            answers
+          });
+          lastSavedAt = (res.result && res.result.savedAt) || new Date().toISOString();
+          quiz.hasDraft = true;
+          quiz.savedAt = lastSavedAt;
+          setSaveStatus('saved', 'Progress saved · ' + formatSavedAt(lastSavedAt));
+        } catch (err) {
+          setSaveStatus('error', err.message || 'Could not save progress');
+        }
+        saveInFlight = false;
+        if (pendingSave) {
+          pendingSave = false;
+          scheduleAutoSave();
+        }
+      }
+
+      function scheduleAutoSave() {
+        if (!quiz || quiz.submitted || !quiz.canTake) return;
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(() => {
+          saveTimer = null;
+          saveProgressNow();
+        }, SAVE_DEBOUNCE_MS);
       }
 
       function renderQuiz() {
@@ -197,7 +291,8 @@
           '<div><strong>Chapters:</strong> ' + escapeHtml(scopes || '—') + '</div>' +
           '<div><strong>Window:</strong> ' + escapeHtml(quiz.opensAt) + ' → ' + escapeHtml(quiz.closesAt) +
           ' (' + escapeHtml(windowLabel(quiz.windowStatus)) + ')</div>' +
-          '<div><strong>Questions:</strong> ' + (quiz.questionCount || 0) + ' · one attempt</div>' +
+          '<div><strong>Questions:</strong> ' + (quiz.questionCount || 0) +
+          ' · auto-saves · one final submit</div>' +
           '</div>';
 
         if (quiz.submitted) {
@@ -252,7 +347,9 @@
           const text = q.options && q.options[letter];
           if (!text) return;
           let cls = 'option-btn';
-          const chosen = locked ? (quiz.answers && quiz.answers[String(q.id)]) : selected[q.id];
+          const chosen = locked
+            ? (quiz.answers && (quiz.answers[String(q.id)] || quiz.answers[q.id]))
+            : (selected[q.id] || selected[String(q.id)]);
           if (chosen === letter) cls += ' selected';
           if (locked && quiz.correctAnswers) {
             const correct = quiz.correctAnswers[String(q.id)];
@@ -280,16 +377,32 @@
           html += '<div class="nav-row"><button type="button" class="btn btn-outline" id="btn-submit-early">Submit all answers</button></div>';
         }
 
+        if (!locked && quiz.canTake) {
+          html += '<div id="save-status" class="save-status"></div>';
+        }
+
         if (quiz.windowStatus === 'closed' || locked) {
           html += '<div class="nav-row"><button class="btn btn-outline" id="btn-view-results">Leaderboard</button></div>';
         }
 
         panel.innerHTML = html;
 
+        if (!locked && quiz.canTake) {
+          if (saveStatus === 'saving') setSaveStatus('saving', 'Saving progress…');
+          else if (saveStatus === 'error') setSaveStatus('error', 'Could not save progress — will retry when you answer again');
+          else if (lastSavedAt || quiz.savedAt) {
+            setSaveStatus('saved', 'Progress saved · ' + formatSavedAt(lastSavedAt || quiz.savedAt));
+          } else {
+            setSaveStatus('', 'Answers auto-save when you pick an option. You can continue another day.');
+          }
+        }
+
         panel.querySelectorAll('.option-btn:not([disabled])').forEach((btn) => {
           btn.addEventListener('click', () => {
-            const qid = Number(btn.dataset.qid);
+            const qid = btn.dataset.qid;
             selected[qid] = btn.dataset.letter;
+            selected[Number(qid)] = btn.dataset.letter;
+            scheduleAutoSave();
             renderQuiz();
           });
         });
@@ -329,10 +442,18 @@
           quiz = res.quiz;
           selected = {};
           currentQuestionIndex = 0;
+          lastSavedAt = quiz.savedAt || '';
+          saveStatus = '';
           if (quiz.answers) {
-            Object.keys(quiz.answers).forEach((k) => { selected[k] = quiz.answers[k]; });
+            Object.keys(quiz.answers).forEach((k) => {
+              selected[k] = quiz.answers[k];
+              selected[Number(k)] = quiz.answers[k];
+            });
           }
           if (quiz.language) setLanguage(quiz.language);
+          if (!quiz.submitted && quiz.canTake && answeredCount() > 0) {
+            currentQuestionIndex = firstUnansweredIndex();
+          }
           renderQuiz();
         } catch (err) {
           panel.innerHTML = '<div class="alert alert-error">' + escapeHtml(err.message) + '</div>';
@@ -359,13 +480,14 @@
       }
 
       async function submitQuiz() {
-        const btn = document.getElementById('btn-submit');
+        const btn = document.getElementById('btn-submit') || document.getElementById('btn-submit-early');
         if (btn) btn.disabled = true;
+        if (saveTimer) {
+          clearTimeout(saveTimer);
+          saveTimer = null;
+        }
         try {
-          const answers = {};
-          (quiz.questions || []).forEach((q) => {
-            if (selected[q.id]) answers[String(q.id)] = selected[q.id];
-          });
+          const answers = buildAnswerPayload();
           const res = await API.call('customSubmit', {
             token,
             customQuizId: quizId,
@@ -374,6 +496,7 @@
           });
           quiz.submitted = true;
           quiz.canTake = false;
+          quiz.hasDraft = false;
           quiz.score = res.result.score;
           quiz.totalQuestions = res.result.totalQuestions;
           quiz.answers = res.result.answers;

@@ -155,15 +155,17 @@ Multi-chapter quizzes with an open/close window. **Not linked from the main site
 | Flag | Settings `custom_quizzes_enabled` (default off) — when on, main site can advertise listing later |
 | Admins | Settings `custom_quiz_admin_emails` (comma-separated) |
 | Admin UI | Hosted `admin-custom.html` — pick chapters, N questions, window, shuffle, publish |
-| Take UI | Hosted `custom.html?q={id}` — one question per page; one attempt; scores in `customSubmissions` only |
-| Firestore | `customQuizzes/{id}`, `customSubmissions/{email}_cq_{id}` (no Sheet tabs for these) |
+| Take UI | Hosted `custom.html?q={id}` — one question per page; **auto-saves** progress; one final submit; scores in `customSubmissions` only |
+| Firestore | `customQuizzes/{id}`, `customSubmissions/{email}_cq_{id}` (unlocked draft until final submit; then `locked: true`) |
 | Content | Random sample from selected chapters; only questions present in **both EN and ML**; frozen `questionRefs`; take UI language switcher |
 | Languages | English and Malayalam available for every custom quiz (same as daily) |
 | Scoring | Does **not** update daily streak / All Time / profile totals |
 | Results email | After close: emailed **only to participants** who submitted (never all users). Hourly trigger + menu. |
 
-**API:** `customCatalog`, `customList`, `customCreate`, `customShuffle`, `customPublish`, `customGet`, `customSubmit`, `customResults`  
+**API:** `customCatalog`, `customList`, `customCreate`, `customShuffle`, `customPublish`, `customGet`, `customSave`, `customSubmit`, `customResults`  
 **Code:** `gas/CustomQuiz.gs`, `web-frontend/admin-custom.html`, `web-frontend/custom.html`
+
+Progress auto-save: each answer choice calls `customSave` (unlocked draft). Users can leave and resume on another day while the window is open. Final `customSubmit` locks the attempt; drafts are excluded from leaderboards and results emails.
 
 ### 5.6 Pause modes (daily / custom / both)
 
@@ -277,7 +279,7 @@ Hosted UI uses `window.BBA_API_URL` (usually the `/exec` URL or `/api` proxy).
 | `customCatalog` | token (admin) | Chapters available for custom quizzes |
 | `customList` | token | List custom quizzes |
 | `customCreate` / `customShuffle` / `customPublish` | token (admin) | Draft / reshuffle / publish |
-| `customGet` / `customSubmit` / `customResults` | token | Take / submit / results |
+| `customGet` / `customSave` / `customSubmit` / `customResults` | token | Load / auto-save draft / final submit / results |
 | `profile` | token | Stats + badges |
 | `ping` | — | Version + public config (`testDatePicker`, `customQuizzesEnabled`, `pauseDailyQuiz`, `pauseCustomQuiz`, `maintenanceMode`, `maintenanceMessage`) |
 
@@ -381,4 +383,4 @@ More: [SETUP.md](./SETUP.md), [FLUTTER.md](./FLUTTER.md), [SHEET-TEMPLATE.md](./
 
 ---
 
-*Last structural update: `2026-09-27.1` — Granular quiz pause: daily-only (custom open) or pause both, via Settings / BBA Quiz menu.*
+*Last structural update: `2026-09-28.1` — Custom quiz auto-save (resume over multiple days until final submit).*

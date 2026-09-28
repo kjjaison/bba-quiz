@@ -132,6 +132,15 @@ function apiCustomGet(token, customQuizId, language) {
   };
 }
 
+function apiCustomSave(token, customQuizId, answers) {
+  requireCustomQuizOpen_();
+  var user = validateSession_(token);
+  return {
+    success: true,
+    result: saveCustomQuizProgress_(user, customQuizId, answers || {})
+  };
+}
+
 function apiCustomSubmit(token, customQuizId, answers, language) {
   requireCustomQuizOpen_();
   var user = validateSession_(token);
