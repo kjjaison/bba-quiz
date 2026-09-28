@@ -5,7 +5,7 @@
 ///
 /// Or change [defaultUrl] below after deployment.
 class AppConfig {
-  static const String appVersion = '2026-09-28.1';
+  static const String appVersion = '2026-09-28.2';
 
   static const String defaultUrl =
       'https://script.google.com/macros/s/AKfycbz2i8zY8yeo2ze8RafADDRckHcS8Y5UFEODbWS2k9Odnhpk8QILHqrTH3lk2O4UPgIunA/exec';

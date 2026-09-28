@@ -1,4 +1,4 @@
-const APP_VERSION = '2026-09-28.1';
+const APP_VERSION = '2026-09-28.2';
     const VERSION_KEY = 'bba_quiz_app_version';
 
     (function enforceAppVersion() {
@@ -134,7 +134,7 @@ const APP_VERSION = '2026-09-28.1';
       try {
         const res = await API.call('ping', {});
         syncTestDatePickerUi(res.testDatePicker === true);
-        syncMaintenanceBanner(res.maintenanceMode === true, res.maintenanceMessage);
+        syncMaintenanceBanner(res.pauseDailyQuiz === true, res.maintenanceMessage);
       } catch (err) {
         syncTestDatePickerUi(false);
         syncMaintenanceBanner(false);
@@ -145,7 +145,7 @@ const APP_VERSION = '2026-09-28.1';
       if (payload && payload.testDatePicker === true) {
         syncTestDatePickerUi(true);
       }
-      if (payload && payload.maintenanceMode === true) {
+      if (payload && (payload.pauseDailyQuiz === true || payload.maintenanceMode === true)) {
         syncMaintenanceBanner(true, payload.maintenanceMessage || payload.message);
       }
       if (payload && payload.date && testDatePickerEnabled) {

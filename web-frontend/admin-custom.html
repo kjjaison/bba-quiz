@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="bba-app-version" content="2026-09-28.1" />
+  <meta name="bba-app-version" content="2026-09-28.2" />
   <title>Custom Quiz Admin — BBA Dublin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=2026-09-28.1" />
+  <link rel="stylesheet" href="./styles.css?v=2026-09-28.2" />
   <style>
     .admin-layout { max-width: 900px; }
     .chapter-grid {
@@ -196,8 +196,8 @@
     </div>
   </div>
 
-  <script src="./config.js?v=2026-09-28.1"></script>
-  <script src="./custom-api.js?v=2026-09-28.1"></script>
+  <script src="./config.js?v=2026-09-28.2"></script>
+  <script src="./custom-api.js?v=2026-09-28.2"></script>
   <script>
     (function () {
       const { API, loadSession, saveSession, clearSession, escapeHtml } = window.BbaCustom;
@@ -256,7 +256,7 @@
       async function checkBackendReady() {
         try {
           const ping = await API.call('ping', {});
-          syncMaintenanceBanner(ping && ping.maintenanceMode === true, ping && ping.maintenanceMessage);
+          syncMaintenanceBanner(ping && ping.pauseCustomQuiz === true, ping && ping.maintenanceMessage);
           if (!ping || typeof ping.customQuizzesEnabled === 'undefined') {
             showAlert(
               'Apps Script is still on an old version (' + ((ping && ping.version) || '?') +
