@@ -8,7 +8,7 @@ class AppConfig {
   static const String appVersion = '2026-09-28.1';
 
   static const String defaultUrl =
-      'https://script.google.com/macros/s/AKfycbxvC5P2T5SZTNfqBp4_ge_l2rOy7EIcDTs4goxAi6xzjjlelPLLiZbOqVu2wedhB3LP7Q/exec';
+      'https://script.google.com/macros/s/AKfycbz2i8zY8yeo2ze8RafADDRckHcS8Y5UFEODbWS2k9Odnhpk8QILHqrTH3lk2O4UPgIunA/exec';
 
   static const String quizUrl = String.fromEnvironment(
     'QUIZ_URL',
