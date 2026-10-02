@@ -1,4 +1,4 @@
-const APP_VERSION = '2026-09-28.2';
+const APP_VERSION = '2026-10-02.1';
     const VERSION_KEY = 'bba_quiz_app_version';
 
     (function enforceAppVersion() {
@@ -221,11 +221,16 @@ const APP_VERSION = '2026-09-28.2';
       function buildRequestUrl() {
         const requestUrl = new URL(url);
         requestUrl.searchParams.set('action', action);
-        // Keep scalar params on the URL too — Apps Script /exec redirects can drop POST bodies.
+        // Keep params on the URL too — Apps Script /exec redirects can drop POST bodies.
         Object.keys(params).forEach((key) => {
           const val = params[key];
           if (val === undefined || val === null) return;
-          if (typeof val === 'object') return;
+          if (typeof val === 'object') {
+            try {
+              requestUrl.searchParams.set(key, JSON.stringify(val));
+            } catch (e) { /* skip */ }
+            return;
+          }
           requestUrl.searchParams.set(key, String(val));
         });
         return requestUrl.toString();

@@ -17,7 +17,14 @@
       Object.keys(params).forEach((key) => {
         const val = params[key];
         if (val === undefined || val === null) return;
-        if (typeof val === 'object') return;
+        // Apps Script /exec often 302-redirects and drops POST bodies.
+        // Keep JSON objects (answers, scopes) on the query string too.
+        if (typeof val === 'object') {
+          try {
+            requestUrl.searchParams.set(key, JSON.stringify(val));
+          } catch (e) { /* skip unserializable */ }
+          return;
+        }
         requestUrl.searchParams.set(key, String(val));
       });
       return requestUrl.toString();

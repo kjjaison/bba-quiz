@@ -442,7 +442,7 @@ function getCustomSubmission_(email, customQuizId) {
     } catch (e) {
       answers = {};
     }
-    var locked = doc.locked !== false && doc.locked !== 'false' && doc.locked !== 0;
+    var locked = doc.locked === true || doc.locked === 'true' || doc.locked === 1 || doc.locked === '1';
     return {
       email: email,
       customQuizId: customQuizId,
@@ -763,6 +763,19 @@ function submitCustomQuiz_(user, customQuizId, answers, language) {
   }
 
   var answerMap = normalizeCustomAnswerMap_(answers, doc.questionRefs || []);
+  // If the request lost its body (Apps Script /exec redirect), fall back to saved draft.
+  if (existing && existing.answers && !existing.locked) {
+    var merged = {};
+    var draftAnswers = existing.answers || {};
+    for (var dk in draftAnswers) {
+      if (draftAnswers.hasOwnProperty(dk) && draftAnswers[dk]) merged[String(dk)] = draftAnswers[dk];
+    }
+    for (var rk in answerMap) {
+      if (answerMap.hasOwnProperty(rk) && answerMap[rk]) merged[String(rk)] = answerMap[rk];
+    }
+    answerMap = normalizeCustomAnswerMap_(merged, doc.questionRefs || []);
+  }
+
   var lang = normalizeLanguage_(language || 'en');
   var questions = loadCustomQuizQuestions_(doc.questionRefs || [], lang, true);
   var totalQuestions = questions.length;
@@ -782,7 +795,10 @@ function submitCustomQuiz_(user, customQuizId, answers, language) {
   }
 
   if (answeredCount < totalQuestions) {
-    throw new Error('Please answer all ' + totalQuestions + ' questions before submitting.');
+    throw new Error(
+      'Please answer all ' + totalQuestions + ' questions before submitting (' +
+      answeredCount + ' answered so far).'
+    );
   }
 
   // Ensure every question key is present on the locked submission
@@ -830,7 +846,7 @@ function buildCustomQuizLeaderboard_(customQuizId) {
   for (var i = 0; i < subDocs.length; i++) {
     var s = decodeFirestoreDocument_(subDocs[i]);
     if (String(s.customQuizId || '') !== String(customQuizId)) continue;
-    if (s.locked === false) continue;
+    if (s.locked !== true && s.locked !== 'true' && s.locked !== 1 && s.locked !== '1') continue;
     var email = String(s.email || '').toLowerCase().trim();
     if (!email) continue;
     scores[email] = {
@@ -880,7 +896,7 @@ function listCustomQuizParticipantEmails_(customQuizId) {
   for (var i = 0; i < subDocs.length; i++) {
     var s = decodeFirestoreDocument_(subDocs[i]);
     if (String(s.customQuizId || '') !== String(customQuizId)) continue;
-    if (s.locked === false) continue;
+    if (s.locked !== true && s.locked !== 'true' && s.locked !== 1 && s.locked !== '1') continue;
     var email = String(s.email || '').toLowerCase().trim();
     if (!email || seen[email]) continue;
     seen[email] = true;

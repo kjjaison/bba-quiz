@@ -83,10 +83,24 @@ function handleApi_(e) {
     if (e.postData && e.postData.contents) {
       var bodyParams = JSON.parse(e.postData.contents);
       for (var key in bodyParams) {
-        if (bodyParams.hasOwnProperty(key)) {
-          params[key] = bodyParams[key];
+        if (!bodyParams.hasOwnProperty(key)) continue;
+        var bodyVal = bodyParams[key];
+        // Don't let an empty answers object from a half-received body wipe URL answers.
+        if (key === 'answers' && bodyVal && typeof bodyVal === 'object' && !Object.keys(bodyVal).length) {
+          if (params.answers && typeof params.answers === 'object' && Object.keys(params.answers).length) {
+            continue;
+          }
         }
+        params[key] = bodyVal;
       }
+    }
+
+    // Parse JSON-string answers/scopes if they arrived via query string only.
+    if (typeof params.answers === 'string') {
+      try { params.answers = JSON.parse(params.answers); } catch (errA) { params.answers = {}; }
+    }
+    if (typeof params.scopes === 'string') {
+      try { params.scopes = JSON.parse(params.scopes); } catch (errS) { params.scopes = []; }
     }
 
     var action = params.action || (e.parameter && e.parameter.action);

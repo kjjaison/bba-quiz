@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <meta name="bba-app-version" content="2026-09-28.2" />
+  <meta name="bba-app-version" content="2026-10-02.2" />
   <title>Custom Quiz — BBA Dublin</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Merriweather:wght@700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="./styles.css?v=2026-09-28.2" />
+  <link rel="stylesheet" href="./styles.css?v=2026-10-02.2" />
   <style>
     .quiz-meta {
       background: var(--bg);
@@ -38,6 +38,8 @@
     .nav-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 1rem; align-items: center; }
     .nav-row.quiz-nav-end { justify-content: flex-end; }
     .nav-row.quiz-nav { justify-content: space-between; }
+    .nav-row .btn { width: auto; min-width: 7.5rem; }
+    .nav-row .btn-primary { color: #fff; }
     .progress-bar {
       height: 6px;
       background: var(--border);
@@ -125,8 +127,8 @@
     </div>
   </div>
 
-  <script src="./config.js?v=2026-09-28.2"></script>
-  <script src="./custom-api.js?v=2026-09-28.2"></script>
+  <script src="./config.js?v=2026-10-02.2"></script>
+  <script src="./custom-api.js?v=2026-10-02.2"></script>
   <script>
     (function () {
       const { API, loadSession, saveSession, clearSession, escapeHtml } = window.BbaCustom;
@@ -367,14 +369,15 @@
           html += '<button type="button" class="btn btn-outline" id="btn-prev-quiz">Previous</button>';
         }
         if (currentQuestionIndex < total - 1) {
-          html += '<button type="button" class="btn" id="btn-next-quiz">Next</button>';
+          html += '<button type="button" class="btn btn-primary" id="btn-next-quiz">Next</button>';
         } else if (!locked && quiz.canTake) {
-          html += '<button type="button" class="btn" id="btn-submit">Submit answers</button>';
+          html += '<button type="button" class="btn btn-primary" id="btn-submit">Submit Answers</button>';
         }
         html += '</div>';
 
+        // Extra submit when all answered but still browsing earlier questions.
         if (!locked && quiz.canTake && currentQuestionIndex < total - 1 && done === total) {
-          html += '<div class="nav-row"><button type="button" class="btn btn-outline" id="btn-submit-early">Submit all answers</button></div>';
+          html += '<div class="nav-row"><button type="button" class="btn btn-primary" id="btn-submit-early">Submit Answers</button></div>';
         }
 
         if (!locked && quiz.canTake) {
@@ -417,6 +420,11 @@
         const nextBtn = document.getElementById('btn-next-quiz');
         if (nextBtn) {
           nextBtn.addEventListener('click', () => {
+            const answered = selected[q.id] || selected[String(q.id)];
+            if (!answered) {
+              showAlert('Please select an answer before continuing.', 'error');
+              return;
+            }
             currentQuestionIndex++;
             renderQuiz();
           });
@@ -479,15 +487,40 @@
         }
       }
 
+      let submitInFlight = false;
+
       async function submitQuiz() {
-        const btn = document.getElementById('btn-submit') || document.getElementById('btn-submit-early');
-        if (btn) btn.disabled = true;
+        if (submitInFlight) return;
+        const buttons = [
+          document.getElementById('btn-submit'),
+          document.getElementById('btn-submit-early')
+        ].filter(Boolean);
+        buttons.forEach((btn) => {
+          btn.disabled = true;
+          btn.textContent = 'Submitting…';
+        });
+        submitInFlight = true;
         if (saveTimer) {
           clearTimeout(saveTimer);
           saveTimer = null;
         }
         try {
           const answers = buildAnswerPayload();
+          const total = (quiz.questions || []).length;
+          const done = Object.keys(answers).length;
+          if (done < total) {
+            throw new Error('Please answer all ' + total + ' questions before submitting (' + done + ' answered so far).');
+          }
+          // Flush latest answers to the server before final lock (helps if POST body is dropped).
+          try {
+            await API.call('customSave', {
+              token,
+              customQuizId: quizId,
+              answers
+            });
+          } catch (saveErr) {
+            // Continue to submit — server can still use the request answers.
+          }
           const res = await API.call('customSubmit', {
             token,
             customQuizId: quizId,
@@ -506,7 +539,12 @@
           renderQuiz();
         } catch (err) {
           showAlert(err.message || 'Submit failed', 'error');
-          if (btn) btn.disabled = false;
+          buttons.forEach((btn) => {
+            btn.disabled = false;
+            btn.textContent = 'Submit Answers';
+          });
+        } finally {
+          submitInFlight = false;
         }
       }
 
